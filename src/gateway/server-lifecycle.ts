@@ -27,7 +27,7 @@ import { clearNodeWakeState } from "./node-wake-state.js";
 import { createLazyGatewayCronState } from "./server-cron-lazy.js";
 import { createGatewayCronReconciliation } from "./server-cron-reconciled.js";
 import { applyGatewayLaneConcurrency, resolveGatewayLaneConcurrency } from "./server-lanes.js";
-import { runGatewayLifecycleSteps } from "./server-lifecycle-steps.js";
+import { runGatewayLifecycleSteps, startGatewayLifecycleSteps } from "./server-lifecycle-steps.js";
 import { createGatewayServerLiveState } from "./server-live-state.js";
 import { retireAndDisposeSystemAgentSessions } from "./server-methods/system-agent-session-lifecycle.js";
 import type { GatewayRequestContext } from "./server-methods/types.js";
@@ -462,13 +462,19 @@ export async function prepareGatewayLifecycle(params: {
     mediaCleanupStopPromise ??= runtimeState.stopMediaCleanup();
     return mediaCleanupStopPromise;
   };
+  let closeOwnerSettlements: ReturnType<typeof startGatewayLifecycleSteps> = [];
   const markClosePreludeStarted = () => {
+    if (lifecycle.closePreludeStarted) {
+      return;
+    }
     lifecycle.closePreludeStarted = true;
     // Fence background owners before any awaited close step can tear down the
     // plugin/channel or shared-state runtime they still need.
-    void systemAgentSessionsResident.stop();
-    void stopOutboundDeliveryRecoveryForClose();
-    void stopMediaCleanupForClose();
+    closeOwnerSettlements = startGatewayLifecycleSteps([
+      () => systemAgentSessionsResident.stop(),
+      stopOutboundDeliveryRecoveryForClose,
+      stopMediaCleanupForClose,
+    ]);
     runtimeState.stopGatewayUpdateCheck();
     runtimeState.controlUiSessionPullRequests?.stop();
     runtimeState.sessionViewerPresence?.stop();
@@ -490,13 +496,10 @@ export async function prepareGatewayLifecycle(params: {
     markClosePreludeStarted();
     // Owners are fenced synchronously above. Join them before any runtime they
     // can publish into is torn down.
-    const ownerSettlements = [
-      stopOutboundDeliveryRecoveryForClose(),
-      stopMediaCleanupForClose(),
-      stopConfigReloaderForClose().catch(() => {}),
-      systemAgentSessionsResident.stop(),
-    ];
-    await runGatewayLifecycleSteps(ownerSettlements.map((settlement) => () => settlement));
+    const configReloaderSettlement = startGatewayLifecycleSteps([
+      () => stopConfigReloaderForClose().catch(() => {}),
+    ]);
+    await runGatewayLifecycleSteps([...closeOwnerSettlements, ...configReloaderSettlement]);
   };
   const finishClosePrelude = async () => {
     disposeNodeConnectionNotifications(nodeRegistry);
@@ -527,7 +530,6 @@ export async function prepareGatewayLifecycle(params: {
       closeMcpServer: closeMcpLoopbackServerOnDemand,
     });
   };
-  const runClosePrelude = () => runGatewayLifecycleSteps([beginClosePrelude, finishClosePrelude]);
   const { getRuntimeSnapshot, startChannels, startChannel, stopChannel, markChannelLoggedOut } =
     channelManager;
   const refreshGatewayHealthSnapshotWithRuntime: typeof refreshGatewayHealthSnapshot = (
@@ -633,7 +635,7 @@ export async function prepareGatewayLifecycle(params: {
         beginClosePrelude,
         stopRegisteredGatewayLifetimeSidecars,
         stopRegisteredPostReadySidecars,
-        runClosePrelude,
+        finishClosePrelude,
         () => createCloseHandler()({ reason: "gateway startup failed" }),
       ]);
     } finally {
@@ -700,7 +702,7 @@ export async function prepareGatewayLifecycle(params: {
     postReadyState,
     cronReconciliation,
     beginClosePrelude,
-    runClosePrelude,
+    finishClosePrelude,
     getRuntimeSnapshot,
     startChannels,
     startChannel,
