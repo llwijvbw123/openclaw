@@ -11,9 +11,9 @@ import {
 } from "./openclaw-state-db-contract.js";
 import { OPENCLAW_STATE_SCHEMA_SQL } from "./openclaw-state-schema.js";
 
-// Same-version databases may lack additive columns that only a writable open
-// can ensure, while read-only planning must keep accepting the older shape.
-const CLAW_LAZY_ADDITIVE_STATE_COLUMNS = [
+// Same-version databases may lack additive columns that a writable cold open
+// ensures, while read-only planning must keep accepting the older shape.
+const CLAW_STARTUP_ADDITIVE_STATE_COLUMNS = [
   "claw_installs.bootstrap_content_digest",
   "claw_installs.bootstrap_source_path",
   "worker_environments.desktop_json",
@@ -30,7 +30,17 @@ const CLAW_LAZY_ADDITIVE_STATE_COLUMNS = [
   "worktrees.run_end_cleanup_json",
 ] as const;
 
-const CLAW_LAZY_ADDITIVE_STATE_COLUMN_SET = new Set<string>(CLAW_LAZY_ADDITIVE_STATE_COLUMNS);
+// Feature-owned columns stay absent until first use. Startup may accept them,
+// but only the owning feature is allowed to add them to an existing database.
+const CLAW_FIRST_USE_ADDITIVE_STATE_COLUMNS = [
+  "session_groups.cwd",
+  "session_groups.worktree",
+] as const;
+
+const CLAW_STARTUP_ADDITIVE_STATE_COLUMN_SET = new Set<string>(CLAW_STARTUP_ADDITIVE_STATE_COLUMNS);
+const CLAW_FIRST_USE_ADDITIVE_STATE_COLUMN_SET = new Set<string>(
+  CLAW_FIRST_USE_ADDITIVE_STATE_COLUMNS,
+);
 const CLAW_STARTUP_ADDITIVE_STATE_TABLES = [
   "worker_session_tool_operations",
   "worker_turn_tool_authorities",
@@ -113,7 +123,10 @@ export const OPENCLAW_STATE_MAINTENANCE_SCHEMA_COMPATIBILITY: SqliteSchemaCompat
   ...STATE_PERSISTENT_SCHEMA_COMPATIBILITY,
   allowedMissingTables: [...LAZY_ADDITIVE_STATE_TABLES, ...CLAW_STARTUP_ADDITIVE_STATE_TABLES],
   allowedMissingIndexes: CLAW_READONLY_OPTIONAL_STATE_INDEXES,
-  allowedMissingColumns: CLAW_LAZY_ADDITIVE_STATE_COLUMNS,
+  allowedMissingColumns: [
+    ...CLAW_STARTUP_ADDITIVE_STATE_COLUMNS,
+    ...CLAW_FIRST_USE_ADDITIVE_STATE_COLUMNS,
+  ],
 };
 
 /** Identify schema differences that the writable shared-state cold open repairs. */
@@ -122,10 +135,18 @@ export function isOpenClawStateStartupRepairableSchemaIssue(issue: SqliteSchemaI
     return CLAW_STARTUP_ADDITIVE_STATE_TABLE_SET.has(issue.objectName);
   }
   if (issue.code === "missing-column") {
-    return CLAW_LAZY_ADDITIVE_STATE_COLUMN_SET.has(issue.objectName);
+    return CLAW_STARTUP_ADDITIVE_STATE_COLUMN_SET.has(issue.objectName);
   }
   return (
     issue.code === "missing-or-drifted-index" &&
     getOpenClawStateCanonicalNamedIndexSet().has(issue.objectName)
+  );
+}
+
+/** Identify compatible schema differences repaired only by their feature owner. */
+export function isOpenClawStateFirstUseSchemaIssue(issue: SqliteSchemaIssue): boolean {
+  return (
+    issue.code === "missing-column" &&
+    CLAW_FIRST_USE_ADDITIVE_STATE_COLUMN_SET.has(issue.objectName)
   );
 }

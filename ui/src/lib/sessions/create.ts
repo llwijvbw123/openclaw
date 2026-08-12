@@ -18,6 +18,7 @@ export type SessionCreateParams = {
   fork?: boolean;
   succeedsParent?: boolean;
   label?: string;
+  category?: string;
   model?: string;
   thinkingLevel?: string;
   incognito?: boolean;

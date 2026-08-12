@@ -229,6 +229,7 @@ export async function createGatewaySession(params: {
   key?: string;
   agentId?: string;
   label?: string;
+  category?: string;
   /** Trusted model-generated title, persisted with a newly created dashboard session. */
   generatedDisplayName?: string;
   model?: string;
@@ -957,6 +958,7 @@ export async function createGatewaySession(params: {
           patch: {
             key: target.canonicalKey,
             label: normalizeOptionalString(params.label),
+            category: normalizeOptionalString(params.category),
             model: catalogModel ?? requestedModel,
             thinkingLevel: requestedThinkingLevel,
           },
