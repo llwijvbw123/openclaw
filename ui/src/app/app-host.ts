@@ -58,6 +58,7 @@ import { ShellNavigationOwner, type ShellNavigationHost } from "./app-shell-navi
 import { renderApplicationShell, type ShellViewHost } from "./app-shell-view.ts";
 import { ShellWorkboardOwner, type ShellWorkboardHost } from "./app-shell-workboard.ts";
 import type { ApplicationRuntime } from "./bootstrap.ts";
+import { startCommunityInvite } from "./community-invite.ts";
 import type { ApplicationContext, ApplicationNavigationOptions } from "./context.ts";
 import {
   BROWSER_PANEL_ELEMENT,
@@ -167,6 +168,7 @@ class OpenClawShell
   agentRosterRefreshTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
   outboxStoreRuntime: OutboxStoreRuntime | null = null;
   private outboxStoreUnsubscribe: (() => void) | null = null;
+  private stopCommunityInvite: (() => void) | null = null;
   readonly outboxStoreImport = createIdleImport(
     () => import("../lib/chat/outbox-store.ts").then((module): OutboxStoreRuntime => module),
     (runtime) => this.installOutboxStoreRuntime(runtime),
@@ -332,6 +334,7 @@ class OpenClawShell
       this.installOutboxStoreRuntime(this.outboxStoreRuntime);
     }
     this.outboxStoreImport.schedule();
+    this.stopCommunityInvite = startCommunityInvite(this);
     this.shellChrome.connect();
     // Write-through of synced display prefs to config ui.prefs. Server-applied
     // deltas are suppressed so a reconcile never echoes back to the gateway.
@@ -352,6 +355,8 @@ class OpenClawShell
 
   override disconnectedCallback() {
     this.shellChrome.disconnect();
+    this.stopCommunityInvite?.();
+    this.stopCommunityInvite = null;
     this.outboxStoreImport.dispose();
     this.outboxStoreUnsubscribe?.();
     this.outboxStoreUnsubscribe = null;
