@@ -4,16 +4,11 @@ import { getTotalPendingReplies } from "../auto-reply/reply/dispatcher-registry.
 import { listLoadedChannelPlugins } from "../channels/plugins/registry-loaded.js";
 import type { ChannelId } from "../channels/plugins/types.public.js";
 import { getRuntimeConfig } from "../config/io.js";
-import {
-  onEffectiveOperatorDevicePaired,
-  type EffectiveOperatorDeviceIdentity,
-} from "../infra/device-pairing.js";
 import { upsertPresence } from "../infra/system-presence.js";
 import { startDiagnosticHeartbeat, stopDiagnosticHeartbeat } from "../logging/diagnostic.js";
 import type { createSubsystemLogger } from "../logging/subsystem.js";
 import { clearPluginMetadataLifecycleCaches } from "../plugins/plugin-metadata-lifecycle.js";
 import { clearSecretsRuntimeSnapshotState } from "../secrets/runtime-state.js";
-import { roleScopesAllow } from "../shared/operator-scope-compat.js";
 import {
   recordRemoteNodeInfo,
   removeRemoteNodeInfo,
@@ -24,6 +19,7 @@ import { createControlUiSessionPullRequestSubscriptions } from "./control-ui-ses
 import { STARTUP_UNAVAILABLE_GATEWAY_METHODS } from "./methods/core-descriptors.js";
 import { disposeNodeConnectionNotifications } from "./node-connection-notifications.js";
 import { clearNodeWakeState } from "./node-wake-state.js";
+import { createControlUiDeviceAuthMigrationLifecycle } from "./server-control-ui-device-auth-migration.js";
 import { createLazyGatewayCronState } from "./server-cron-lazy.js";
 import { createGatewayCronReconciliation } from "./server-cron-reconciled.js";
 import { applyGatewayLaneConcurrency, resolveGatewayLaneConcurrency } from "./server-lanes.js";
@@ -31,10 +27,7 @@ import { runGatewayLifecycleSteps, startGatewayLifecycleSteps } from "./server-l
 import { createGatewayServerLiveState } from "./server-live-state.js";
 import { retireAndDisposeSystemAgentSessions } from "./server-methods/system-agent-session-lifecycle.js";
 import type { GatewayRequestContext } from "./server-methods/types.js";
-import {
-  type GatewayCloseOptions,
-  shouldRetainControlUiDeviceAuthMigrationSession,
-} from "./server-public.js";
+import type { GatewayCloseOptions } from "./server-public.js";
 import type { prepareGatewayKernelState } from "./server-runtime-state-prepare.js";
 import {
   getHealthVersion,
@@ -109,51 +102,15 @@ export async function prepareGatewayLifecycle(params: {
     wizardSessions,
     pluginGatewayContext,
   } = runtime;
-  const completeControlUiDeviceAuthMigrationForEffectiveOperator = (
-    device: EffectiveOperatorDeviceIdentity,
-  ) => {
-    if (
-      !controlUiDeviceAuthMigration.pending ||
-      !roleScopesAllow({
-        role: "operator",
-        requestedScopes: ["operator.pairing"],
-        allowedScopes: device.scopes,
-      })
-    ) {
-      return;
-    }
-    const normalizedDeviceId = device.deviceId.trim();
-    // Close the process-local grace immediately after approval. The durable
-    // receipt prevents stale legacy config from reopening it.
-    controlUiDeviceAuthMigration.pending = false;
-    for (const client of clients) {
-      if (!client.isControlUiDeviceAuthMigrationSession) {
-        continue;
-      }
-      if (
-        client.isControlUiDeviceAuthMigration &&
-        shouldRetainControlUiDeviceAuthMigrationSession({
-          sessionDevice: client.connect.device,
-          approvedDevice: device,
-        })
-      ) {
-        // Retention is bound to the approved key as well as its derived id.
-        // Keep only that identity long enough to receive the approval response.
-        continue;
-      }
-      client.invalidated = true;
-      client.invalidatedReason = "device-auth-migration-completed";
-      client.socket.close(4001, "device auth migration completed");
-    }
-    try {
-      completeControlUiDeviceAuthMigration(normalizedDeviceId, { env: process.env });
-    } catch (error) {
-      log.warn(`failed to persist Control UI device-auth migration completion: ${String(error)}`);
-    }
-  };
-  const unsubscribeEffectiveOperatorPairing = onEffectiveOperatorDevicePaired(
-    completeControlUiDeviceAuthMigrationForEffectiveOperator,
-  );
+  const {
+    completeForEffectiveOperator: completeControlUiDeviceAuthMigrationForEffectiveOperator,
+    unsubscribe: unsubscribeEffectiveOperatorPairing,
+  } = createControlUiDeviceAuthMigrationLifecycle({
+    migration: controlUiDeviceAuthMigration,
+    completeMigration: completeControlUiDeviceAuthMigration,
+    clients,
+    log,
+  });
   workerGatewayEndpoint.resolve = transportBridge.getWorkerIngressEndpoint;
   const subscribeSessionMessageEvents: GatewayRequestContext["subscribeSessionMessageEvents"] = (
     connId,
