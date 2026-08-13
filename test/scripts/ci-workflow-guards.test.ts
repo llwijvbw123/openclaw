@@ -5191,7 +5191,9 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
     expect(checkShardRun).toContain('if [ "$RUNNER_BACKEND" = "github" ]; then');
     expect(checkShardRun).toContain("lint_args=(--only=extensions --only=scripts --threads=1)");
     expect(checkShardRun).toContain('elif [ "$(nproc)" -lt 8 ]; then');
-    expect(checkShardRun).toContain("lint_args=(--split-core --threads=1)");
+    expect(checkShardRun).toContain("lint_args=(--threads=1)");
+    expect(checkShardRun).not.toContain("lint_args=(--split-core --threads=1)");
+    expect(checkShardRun.match(/export GOMAXPROCS=2/gu)).toHaveLength(2);
     expect(checkShardRun).toContain('pnpm lint "${lint_args[@]}"');
     expect(checkShardRun).toContain(
       'node --import tsx scripts/run-oxlint-shards.mts "${lint_args[@]}"',
@@ -5202,6 +5204,10 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
       "max-parallel": 3,
       matrix: { stripe: [1, 2, 3] },
     });
+    expect(
+      hostedCoreLint.steps.find((step: WorkflowStep) => step.name === "Run hosted core lint stripe")
+        .env.GOMAXPROCS,
+    ).toBe("2");
     expect(
       hostedCoreLint.steps.find((step: WorkflowStep) => step.name === "Run hosted core lint stripe")
         .run,
@@ -5310,7 +5316,7 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
       'if [[ "${RATCHET_RELEASE_MERGE_TREE:-}" == "true" ]]; then',
     );
     expect(checksFastRun.run).toContain(
-      "node --import tsx scripts/run-oxlint-shards.mts --only=core --only=extensions --split-core --threads=1",
+      "node --import tsx scripts/run-oxlint-shards.mts --only=core --only=extensions --threads=1",
     );
     expect(checksFastRun.run).not.toContain(
       "node scripts/run-oxlint.mjs src ui/src packages extensions",
