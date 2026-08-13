@@ -274,7 +274,8 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // -2: retire the dead progress-draft render reader; it counted twice via
       // channel-outbound and channel-message's wildcard re-export of it.
       // +11: Computer Use schemas/types plus parsers, compiler, and provider registration.
-      4317,
+      // +1: opaque channel participant evidence preservation without mint authority.
+      4318,
       env,
     ),
     publicFunctionExports: readPluginSdkSurfaceBudgetEnv(
