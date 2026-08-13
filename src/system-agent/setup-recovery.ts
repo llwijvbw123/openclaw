@@ -1,4 +1,5 @@
 // Machine-local onboarding recovery owns receipt identity and completion validation.
+import { resolveSystemAgentTargetAgentId } from "../agents/agent-scope-config.js";
 import { resolveOnboardingAgentTarget } from "../commands/onboard-agent-target.js";
 import { readConfigFileSnapshot, withConfigMutationExclusive } from "../config/config.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -41,7 +42,10 @@ export async function completeLocalSetupRecovery(params: {
       lockedSourceConfig.wizard?.securityAcknowledgedAt !== params.owner.securityAcknowledgedAt ||
       sourceConfig.wizard?.securityAcknowledgedAt !== params.owner.securityAcknowledgedAt ||
       resolveUserPath(
-        resolveOnboardingAgentTarget(snapshot.runtimeConfig ?? snapshot.config).workspaceDir,
+        resolveOnboardingAgentTarget(
+          snapshot.runtimeConfig ?? snapshot.config,
+          resolveSystemAgentTargetAgentId(snapshot.runtimeConfig ?? snapshot.config),
+        ).workspaceDir,
       ) !== params.owner.workspace
     ) {
       throw new Error("The onboarding configuration changed before setup could complete.");

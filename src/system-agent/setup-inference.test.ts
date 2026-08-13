@@ -610,17 +610,21 @@ describe("applySystemAgentModelSelection", () => {
     expect(result.agents?.entries).toBeUndefined();
   });
 
-  it("overrides higher-priority runtime metadata on an inheriting default agent", async () => {
+  it("overrides higher-priority runtime metadata on the explicit system agent owner", async () => {
     const config = {
       agents: {
-        defaults: { model: { primary: "openai/gpt-5.4" } },
+        ownership: "explicit",
+        defaults: {
+          model: { primary: "openai/gpt-5.4" },
+          systemAgent: { agentId: "ops" },
+        },
         entries: {
           ops: {
-            default: true,
             models: {
               "openai/gpt-5.5": { agentRuntime: { id: "openclaw" } },
             },
           },
+          helper: {},
         },
       },
     } satisfies OpenClawConfig;
@@ -628,11 +632,13 @@ describe("applySystemAgentModelSelection", () => {
     const result = await applySystemAgentModelSelection({
       config,
       model: "openai/gpt-5.5",
+      targetAgentId: "ops",
       agentRuntimeId: "codex",
     });
 
-    expect(result.agents?.defaults?.model).toMatchObject({ primary: "openai/gpt-5.5" });
+    expect(result.agents?.defaults?.model).toMatchObject({ primary: "openai/gpt-5.4" });
     expect(result.agents?.entries?.ops).toMatchObject({
+      model: "openai/gpt-5.5",
       models: { "openai/gpt-5.5": { agentRuntime: { id: "codex" } } },
     });
     expect(config.agents.entries.ops?.models?.["openai/gpt-5.5"]?.agentRuntime?.id).toBe(
@@ -1059,14 +1065,18 @@ describe("detectSetupInference", () => {
     const { readConfigFileSnapshot } = await import("../config/config.js");
     const config: OpenClawConfig = {
       agents: {
-        defaults: { model: "openai/gpt-5.6-sol" },
+        ownership: "explicit",
+        defaults: {
+          model: "openai/gpt-5.6-sol",
+          systemAgent: { agentId: "main" },
+        },
         entries: {
           main: {
-            default: true,
             models: {
               "openai/gpt-5.6-sol": { agentRuntime: { id: "codex" } },
             },
           },
+          helper: {},
         },
       },
     };
@@ -1112,6 +1122,7 @@ describe("detectSetupInference", () => {
       "existing-model",
       "claude-cli",
     ]);
+    expect(detectInferenceBackends).toHaveBeenLastCalledWith({ config, agentId: "main" });
   });
 
   it("keeps a Codex candidate when it would switch the configured model", async () => {

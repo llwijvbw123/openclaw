@@ -1,7 +1,6 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { resolveDefaultAgentId } from "../agents/agent-scope.js";
 import {
   type CodexCliApiKeyCredential,
   readCodexCliActiveApiKey,
@@ -175,16 +174,18 @@ async function activateSetupInferenceUnredacted(
     let testPlan = plan;
     if (plan.persistModelRef) {
       const agentRuntimeId = resolveSetupAgentRuntimeId(params.kind);
+      const targetAgentId = plan.config.agents?.defaults?.systemAgent?.agentId;
       const stagedConfig = await applySystemAgentModelSelection({
         config: plan.config,
         model: plan.persistModelRef,
+        ...(targetAgentId ? { targetAgentId } : {}),
         ...(agentRuntimeId ? { agentRuntimeId } : {}),
         ...(plan.manualAuth && plan.authProfileId ? { authProfileId: plan.authProfileId } : {}),
       });
       testPlan = {
         ...plan,
         config: stagedConfig,
-        routeAgentId: resolveDefaultAgentId(stagedConfig),
+        routeAgentId: plan.routeAgentId,
       };
     }
 
@@ -329,7 +330,7 @@ async function activateSetupInferenceUnredacted(
     const stagedRoute = verifiedRoute.route;
     const stagedExecutionRoute = await resolveSystemAgentConfiguredRouteFromConfig(
       testPlan.config,
-      undefined,
+      testPlan.routeAgentId,
       routeDeps,
     );
     if (

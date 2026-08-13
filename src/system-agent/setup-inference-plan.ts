@@ -1,4 +1,4 @@
-import { resolveDefaultAgentId } from "../agents/agent-scope.js";
+import { resolveSystemAgentTargetAgentId } from "../agents/agent-scope-config.js";
 import type { CodexCliApiKeyCredential } from "../agents/cli-credentials.js";
 import { CliExecutionAuthProfileError } from "../agents/cli-execution-auth.js";
 import { normalizeProviderId } from "../agents/model-selection.js";
@@ -191,7 +191,7 @@ export async function buildTestPlan(params: {
         agentDir: params.agentDir,
         config: prepared.config,
         agentId: "openclaw",
-        routeAgentId: resolveDefaultAgentId(prepared.config),
+        routeAgentId: resolveSystemAgentTargetAgentId(prepared.config),
         ...(prepared.selectedProfileId ? { authProfileId: prepared.selectedProfileId } : {}),
         persistModelRef: modelRef,
         manualAuth: {
@@ -265,7 +265,7 @@ export async function buildTestPlan(params: {
         modelRef,
         config: cfg,
         agentId: "openclaw",
-        routeAgentId: resolveDefaultAgentId(cfg),
+        routeAgentId: resolveSystemAgentTargetAgentId(cfg),
         persistModelRef: modelRef,
       };
     }
@@ -281,7 +281,7 @@ export async function buildTestPlan(params: {
         modelRef,
         config: cfg,
         agentId: "openclaw",
-        routeAgentId: resolveDefaultAgentId(cfg),
+        routeAgentId: resolveSystemAgentTargetAgentId(cfg),
         persistModelRef: modelRef,
       };
     }
@@ -312,7 +312,7 @@ export async function buildTestPlan(params: {
           agentHarnessRuntimeOverride: "codex",
           config: preparedAuth.config,
           agentId: "openclaw",
-          routeAgentId: resolveDefaultAgentId(preparedAuth.config),
+          routeAgentId: resolveSystemAgentTargetAgentId(preparedAuth.config),
           agentDir: params.agentDir,
           cleanupBundleMcpOnRunEnd: true,
           authProfileId: preparedAuth.selectedProfileId,
@@ -332,7 +332,7 @@ export async function buildTestPlan(params: {
         agentHarnessRuntimeOverride: "codex",
         config: cfg,
         agentId: "openclaw",
-        routeAgentId: resolveDefaultAgentId(cfg),
+        routeAgentId: resolveSystemAgentTargetAgentId(cfg),
         agentDir: params.agentDir,
         cleanupBundleMcpOnRunEnd: true,
         persistModelRef: modelRef,
@@ -350,7 +350,7 @@ export async function buildTestPlan(params: {
         modelRef,
         config: cfg,
         agentId: "openclaw",
-        routeAgentId: resolveDefaultAgentId(cfg),
+        routeAgentId: resolveSystemAgentTargetAgentId(cfg),
         persistModelRef: modelRef,
       };
     }
@@ -366,7 +366,7 @@ export async function buildTestPlan(params: {
         modelRef,
         config: cfg,
         agentId: "openclaw",
-        routeAgentId: resolveDefaultAgentId(cfg),
+        routeAgentId: resolveSystemAgentTargetAgentId(cfg),
         persistModelRef: modelRef,
       };
     }
@@ -607,7 +607,7 @@ export async function buildTestPlan(params: {
         agentDir: params.agentDir,
         config: preparedAuth.config,
         agentId: "openclaw",
-        routeAgentId: resolveDefaultAgentId(preparedAuth.config),
+        routeAgentId: resolveSystemAgentTargetAgentId(preparedAuth.config),
         ...(preparedAuth.selectedProfileId
           ? { authProfileId: preparedAuth.selectedProfileId }
           : {}),

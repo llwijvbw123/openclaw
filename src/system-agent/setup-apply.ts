@@ -1,6 +1,10 @@
 // Applies OpenClaw's conversational setup: config, workspace files, gateway.
 import { isDeepStrictEqual } from "node:util";
-import { listAgentEntries, toAgentEntriesRecord } from "../agents/agent-scope-config.js";
+import {
+  listAgentEntries,
+  resolveSystemAgentTargetAgentId,
+  toAgentEntriesRecord,
+} from "../agents/agent-scope-config.js";
 import { resolveOnboardingAgentTarget } from "../commands/onboard-agent-target.js";
 import { hasResolvedRosterBeforeMigrations } from "../config/agent-roster-provenance.js";
 import {
@@ -83,6 +87,10 @@ type SystemAgentSetupApplyHooks = {
   /** Host-owned authority seam; called at every persistent setup boundary. */
   commit<T>(effect: () => Promise<T> | T): Promise<T>;
 };
+
+function resolveSystemAgentOnboardingTarget(config: OpenClawConfig) {
+  return resolveOnboardingAgentTarget(config, config.agents?.defaults?.systemAgent?.agentId);
+}
 
 /** Prompter for quickstart-only flows: notes go to the log, prompts fail loud. */
 export function createQuickstartNotePrompter(runtime: RuntimeEnv): WizardPrompter {
@@ -320,9 +328,8 @@ export async function applySystemAgentSetup(
     if (!guardModules) {
       return;
     }
-    const [{ resolveAgentDir, resolveDefaultAgentId }, { resolveDefaultModelForAgent }] =
-      guardModules;
-    const currentAgentId = resolveDefaultAgentId(config);
+    const [{ resolveAgentDir }, { resolveDefaultModelForAgent }] = guardModules;
+    const currentAgentId = resolveSystemAgentTargetAgentId(config);
     if (expectedAgentId && currentAgentId !== expectedAgentId) {
       throw new Error(
         "The default agent changed while AI access was being tested. Try setup again.",
@@ -441,9 +448,11 @@ export async function applySystemAgentSetup(
       preserveWorkspace,
     });
     if (model) {
+      const targetAgentId = candidate.agents?.defaults?.systemAgent?.agentId;
       candidate = await applySystemAgentModelSelection({
         config: candidate,
         model,
+        ...(targetAgentId ? { targetAgentId } : {}),
         ...(agentRuntimeId ? { agentRuntimeId } : {}),
         ...(authProfileId ? { authProfileId } : {}),
       });
@@ -509,7 +518,7 @@ export async function applySystemAgentSetup(
           if (assertCommitPreconditions) {
             assertCommitPreconditions(currentSnapshot.sourceConfig);
             if (
-              resolveUserPath(resolveOnboardingAgentTarget(finalizedConfig).workspaceDir) !==
+              resolveUserPath(resolveSystemAgentOnboardingTarget(finalizedConfig).workspaceDir) !==
               resolveUserPath(workspace)
             ) {
               throw new Error(
@@ -532,7 +541,7 @@ export async function applySystemAgentSetup(
   if (!settings) {
     throw new Error("OpenClaw setup committed without resolved Gateway settings.");
   }
-  const onboardingTarget = resolveOnboardingAgentTarget(nextConfig);
+  const onboardingTarget = resolveSystemAgentOnboardingTarget(nextConfig);
   const effectiveWorkspace = onboardingTarget.workspaceDir;
   if (params.expectedInferenceRoute) {
     const afterRead = await readConfigFileSnapshotWithPluginMetadata();
@@ -587,8 +596,7 @@ export async function applySystemAgentSetup(
     }
   };
 
-  const { resolveDefaultAgentId } = await import("../agents/agent-scope.js");
-  const effectiveAgentId = resolveDefaultAgentId(nextConfig);
+  const effectiveAgentId = onboardingTarget.agentId;
   const workspaceResult = await runCommittedFollowUp(
     async () =>
       await onboardHelpers.ensureWorkspaceAndSessions(effectiveWorkspace, runtime, {

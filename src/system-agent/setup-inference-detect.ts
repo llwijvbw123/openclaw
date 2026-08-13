@@ -1,5 +1,6 @@
 import { normalizeOptionalAgentRuntimeId } from "../agents/agent-runtime-id.js";
-import { resolveAgentEffectiveModelPrimary, resolveDefaultAgentId } from "../agents/agent-scope.js";
+import { resolveSystemAgentTargetAgentId } from "../agents/agent-scope-config.js";
+import { resolveAgentEffectiveModelPrimary } from "../agents/agent-scope.js";
 import { areRuntimeModelRefsEquivalent } from "../agents/model-runtime-aliases.js";
 import { resolveModelRuntimePolicy } from "../agents/model-runtime-policy.js";
 import { normalizeProviderId } from "../agents/model-selection.js";
@@ -35,6 +36,7 @@ import { parseRef } from "./setup-inference-plan-helpers.js";
 function resolveConfiguredCandidateKind(
   config: Parameters<typeof resolveModelRuntimePolicy>[0]["config"],
   modelRef: string | undefined,
+  agentId: string,
 ): SetupInferenceCandidate["kind"] | undefined {
   if (!modelRef) {
     return undefined;
@@ -45,7 +47,7 @@ function resolveConfiguredCandidateKind(
       config,
       provider: ref.provider,
       modelId: ref.model,
-      agentId: resolveDefaultAgentId(config ?? {}),
+      agentId,
     }).policy?.id,
   );
   if (runtime === "codex") {
@@ -97,7 +99,9 @@ export async function listManualSetupInferenceOptions(
     workspace,
     // Derived from config only (no probing): a pre-existing default model must
     // keep classifying the install as configured even when scanning declined.
-    setupComplete: Boolean(resolveAgentEffectiveModelPrimary(cfg, resolveDefaultAgentId(cfg))),
+    setupComplete: Boolean(
+      resolveAgentEffectiveModelPrimary(cfg, resolveSystemAgentTargetAgentId(cfg)),
+    ),
   };
 }
 
@@ -110,7 +114,11 @@ export async function detectSetupInference(
     throw new Error(invalidSetupConfigError(snapshot));
   }
   const cfg = snapshot.runtimeConfig ?? snapshot.config;
-  const detected = await (deps.detectInferenceBackends ?? detectInferenceBackends)({ config: cfg });
+  const agentId = resolveSystemAgentTargetAgentId(cfg);
+  const detected = await (deps.detectInferenceBackends ?? detectInferenceBackends)({
+    config: cfg,
+    agentId,
+  });
   const unavailableCandidates: SetupInferenceUnavailableCandidate[] = [];
   const deferredUnavailableCandidates: SetupInferenceUnavailableCandidate[] = [];
   const probe = deps.probeLocalCommand ?? probeLocalCommand;
@@ -136,7 +144,7 @@ export async function detectSetupInference(
   const configuredModel = detected.find(
     (candidate) => candidate.kind === "existing-model",
   )?.modelRef;
-  const configuredCandidateKind = resolveConfiguredCandidateKind(cfg, configuredModel);
+  const configuredCandidateKind = resolveConfiguredCandidateKind(cfg, configuredModel, agentId);
   const raw = detected.filter(
     (candidate) =>
       candidate.kind !== "gemini-cli" &&

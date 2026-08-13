@@ -1,4 +1,8 @@
 import { stat } from "node:fs/promises";
+import {
+  resolveAgentWorkspaceDir,
+  resolveSystemAgentTargetAgentId,
+} from "../agents/agent-scope-config.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { defaultRuntime, type RuntimeEnv } from "../runtime.js";
 import type { WizardPrompter } from "../wizard/prompts.js";
@@ -137,7 +141,8 @@ export async function runHostedSkillsSetup(
     run: async ({ baseConfig, runtime: setupRuntime }) => ({
       nextConfig: await setupSkills(
         baseConfig,
-        resolveOnboardingAgentTarget(baseConfig).workspaceDir,
+        resolveOnboardingAgentTarget(baseConfig, resolveSystemAgentTargetAgentId(baseConfig))
+          .workspaceDir,
         setupRuntime,
         prompter,
         { beforePersistentEffect: async () => await beforePersistentApply(setupRuntime) },
@@ -220,8 +225,7 @@ export async function runHostedMemoryImport(
   beforePersistentApply: (runtime: RuntimeEnv) => Promise<void>,
   onProviderOutcome: (outcome: MemoryImportProviderOutcome) => void,
 ): Promise<HostedMemoryImportOutcome> {
-  const [{ resolveAgentWorkspaceDir, resolveDefaultAgentId }, { readSetupConfigFileSnapshot }] =
-    await Promise.all([import("../agents/agent-scope.js"), loadSetupShared()]);
+  const { readSetupConfigFileSnapshot } = await loadSetupShared();
   const snapshot = await readSetupConfigFileSnapshot();
   if (!snapshot.exists || !snapshot.valid || !snapshot.hash) {
     throw new Error(
@@ -230,7 +234,7 @@ export async function runHostedMemoryImport(
   }
   const baseHash = snapshot.hash;
   const config = snapshot.config;
-  const agentId = resolveDefaultAgentId(config);
+  const agentId = resolveSystemAgentTargetAgentId(config);
   const workspace = resolveAgentWorkspaceDir(config, agentId);
   try {
     if (!(await stat(workspace)).isDirectory()) {
@@ -248,6 +252,7 @@ export async function runHostedMemoryImport(
   const runtime = createHostedWizardRuntime(defaultRuntime);
   return await runSetupMemoryImportStep({
     config,
+    agentId,
     prompter,
     runtime,
     beforeApply: async () => {

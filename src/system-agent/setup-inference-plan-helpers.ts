@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { expectDefined } from "@openclaw/normalization-core";
 import type { AgentRunResultView } from "../agents/agent-run-result.js";
-import { listAgentEntries, resolveDefaultAgentId } from "../agents/agent-scope.js";
+import { resolveSystemAgentTargetAgentId } from "../agents/agent-scope-config.js";
+import { listAgentEntries } from "../agents/agent-scope.js";
 import { loadAuthProfileStoreForRuntime } from "../agents/auth-profiles/store.js";
 import { resolveCliBackendConfig } from "../agents/cli-backends.js";
 import type { FailoverReason } from "../agents/failover/signal.js";
@@ -208,7 +209,7 @@ export function projectSetupTargetModelMetadata(config: OpenClawConfig, modelRef
           : { exists: false },
       ]),
     );
-  const defaultAgentId = resolveDefaultAgentId(config);
+  const defaultAgentId = resolveSystemAgentTargetAgentId(config);
   const agent = listAgentEntries(config).find(
     (entry) => normalizeAgentId(entry.id) === defaultAgentId,
   );
@@ -322,7 +323,7 @@ function copySelectedModelMetadata(params: {
     };
   }
 
-  const defaultAgentId = resolveDefaultAgentId(params.target);
+  const defaultAgentId = resolveSystemAgentTargetAgentId(params.target);
   const preparedAgent = listAgentEntries(params.prepared).find(
     (agent) => normalizeAgentId(agent.id) === defaultAgentId,
   );

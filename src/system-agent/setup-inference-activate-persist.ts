@@ -107,9 +107,11 @@ export async function persistActivatedSetupInference(input: {
 
   const { stripPendingPluginInstallRecords } = await import("../plugins/install-record-commit.js");
   const agentRuntimeId = resolveSetupAgentRuntimeId(params.kind);
+  const targetAgentId = plan.config.agents?.defaults?.systemAgent?.agentId;
   const selectModel = plan.persistModelRef
     ? await createSystemAgentModelSelectionUpdater({
         model: plan.persistModelRef,
+        ...(targetAgentId ? { targetAgentId } : {}),
         ...(agentRuntimeId ? { agentRuntimeId } : {}),
         ...(plan.manualAuth && plan.authProfileId ? { authProfileId: plan.authProfileId } : {}),
       })
