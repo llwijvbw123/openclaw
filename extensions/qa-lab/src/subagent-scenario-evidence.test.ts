@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   evaluateForkedSubagentEvidence,
   evaluateSubagentHandoffEvidence,
-} from "./subagent-scenario-evidence.js";
+} from "./subagent-scenario-evaluator.js";
 
 const requesterSessionKey = "agent:qa:subagent-handoff:current";
 const childSessionKey = "agent:qa:subagent:current";

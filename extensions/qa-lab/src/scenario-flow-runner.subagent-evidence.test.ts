@@ -3,7 +3,6 @@ import { normalizeLowercaseStringOrEmpty } from "openclaw/plugin-sdk/string-coer
 import { describe, expect, it } from "vitest";
 import { createQaBusState } from "./bus-state.js";
 import { runLoadedScenarioFlow } from "./scenario-flow-runner.test-support.js";
-import { summarizeSubagentEvidenceProbe } from "./subagent-scenario-evidence.js";
 
 const cases = [
   ["subagent-handoff", "Delegated task: task\nResult: fabricated\nEvidence: child completed"],
@@ -38,12 +37,9 @@ async function runFlow(scenarioId: (typeof cases)[number][0], text: string, caus
       normalizeLowercaseStringOrEmpty,
       collectSubagentScenarioEvidence: async () => ({
         evidence: causal ? true : undefined,
-        summary: summarizeSubagentEvidenceProbe(
-          causal ? 1 : 0,
-          causal ? [{ status: "succeeded", deliveryStatus: "delivered" }] : [],
-          causal ? ["child result"] : [],
-          causal ? true : undefined,
-        ),
+        summary: causal
+          ? "children=1 tasks=1 completed=1 childText=present evidence=valid"
+          : "children=0 tasks=0 completed=0 childText=absent evidence=invalid",
       }),
     },
   });
