@@ -231,10 +231,41 @@ describe("parseSlashCommand", () => {
     expectRecordFields(tools, "tools command", {
       key: "tools",
       description: "List available runtime tools.",
-      argOptions: ["compact", "verbose"],
+      argSpecs: [
+        {
+          name: "mode",
+          description: "compact or verbose",
+          choices: [
+            { value: "compact", label: "compact" },
+            { value: "verbose", label: "verbose" },
+          ],
+        },
+      ],
       executeLocal: false,
     });
     expectParsedSlash("/tools verbose", { name: "tools" }, "verbose");
+  });
+
+  it("keeps every declared argument instead of only the first", () => {
+    expectRecordFields(requireCommandByKey("session"), "session command", {
+      argSpecs: [
+        {
+          name: "action",
+          description: "idle | max-age",
+          choices: [
+            { value: "idle", label: "idle" },
+            { value: "max-age", label: "max-age" },
+          ],
+        },
+        { name: "value", description: "Duration (24h, 90m) or off" },
+      ],
+    });
+  });
+
+  it("declares a free-form value argument for value-only commands", () => {
+    expectRecordFields(requireCommandByKey("name"), "name command", {
+      argSpecs: [{ name: "title", description: "New session name (omit to see a suggestion)" }],
+    });
   });
 
   it("parses slash aliases through the shared registry", () => {
@@ -466,7 +497,67 @@ describe("parseSlashCommand", () => {
     expect(first.description).toBe("d".repeat(1_999));
     expect(first.args?.split(" ")).toHaveLength(20);
     expect(first.args?.split(" ")[0]).toBe("[" + "n".repeat(199) + "]");
-    expect(first.argOptions).toHaveLength(50);
+    expect(first.argSpecs).toHaveLength(20);
+    expect(first.argSpecs?.[0]?.choices).toHaveLength(50);
+    expect(first.argSpecs?.[0]?.description).toBe("d".repeat(500));
+    expect(first.argSpecs?.at(-1)?.choices).toHaveLength(50);
+  });
+
+  it("marks provider-dependent remote arguments as dynamic instead of dropping them", () => {
+    applyRemoteEntries([
+      {
+        name: "plugin-think",
+        textAliases: ["/plugin-think"],
+        description: "Plugin thinking control.",
+        source: "plugin",
+        scope: "both",
+        acceptsArgs: true,
+        args: [
+          {
+            name: "level",
+            description: "Thinking level",
+            type: "string",
+            required: true,
+            dynamic: true,
+          },
+        ],
+      },
+    ]);
+
+    expectRecordFields(requireCommandByName("plugin-think"), "plugin-think command", {
+      argSpecs: [{ name: "level", description: "Thinking level", required: true, dynamic: true }],
+    });
+  });
+
+  it("keeps remote choice labels distinct from their values", () => {
+    applyRemoteEntries([
+      {
+        name: "plugin-fast",
+        textAliases: ["/plugin-fast"],
+        description: "Plugin fast mode.",
+        source: "plugin",
+        scope: "both",
+        acceptsArgs: true,
+        args: [
+          {
+            name: "mode",
+            description: "Fast mode",
+            type: "string",
+            choices: [{ value: "auto", label: "auto (45 sec)" }],
+          },
+        ],
+      },
+    ]);
+
+    expectRecordFields(requireCommandByName("plugin-fast"), "plugin-fast command", {
+      argSpecs: [
+        {
+          name: "mode",
+          description: "Fast mode",
+          choices: [{ value: "auto", label: "auto (45 sec)" }],
+        },
+      ],
+    });
   });
 
   it("preserves only known closed plugin client presentation metadata", () => {

@@ -4020,6 +4020,51 @@ button.chat-reply-preview--message:disabled {
   flex-shrink: 0;
 }
 
+.slash-arg-stage {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-bottom: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--menu-item-radius);
+  background: var(--bg-elevated);
+}
+
+.slash-arg-stage__prefix {
+  flex-shrink: 0;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--control-ui-text-sm);
+  font-weight: 500;
+  color: var(--text);
+}
+
+.slash-arg-stage__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font: inherit;
+  font-size: var(--control-ui-text-sm);
+  color: var(--text);
+}
+
+.slash-arg-stage__input::placeholder {
+  color: var(--muted);
+}
+
+.slash-arg-stage__hint {
+  flex-shrink: 0;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
 .chat-attachments-preview {
   display: flex;
   gap: 8px;

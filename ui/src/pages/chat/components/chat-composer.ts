@@ -28,14 +28,15 @@ import {
   updateSkillMenu,
 } from "./chat-composer-skill-menu.ts";
 import {
+  cancelSlashArgStage,
   exportMarkdown,
   getActiveSlashMenuOptionId,
   getActiveSlashMenuOptionLabel,
+  isSlashArgStageVisible,
   isSlashMenuVisible,
   paneDomId,
   resetSlashMenuState,
   scrollActiveSlashMenuOptionIntoView,
-  selectSlashArg,
   selectSlashCommand,
   tabCompleteSlashCommand,
   updateSlashMenu,
@@ -331,23 +332,16 @@ export function renderChatComposer(props: ChatComposerProps) {
       }
     }
 
-    if (
-      props.connected &&
-      state.slashMenuOpen &&
-      state.slashMenuMode === "args" &&
-      state.slashMenuArgItems.length > 0
-    ) {
-      if (
-        handleComposerMenuKeyDown(
-          event,
-          state,
-          state.slashMenuArgItems,
-          props.paneId,
-          requestUpdate,
-          (arg, submit) => selectSlashArg(arg, props, requestUpdate, submit),
-          scrollActiveSlashMenuOptionIntoView,
-        )
-      ) {
+    // Argument stages own their own input element and keyboard contract. A key
+    // arriving on the textarea means focus left the stage, so drop staging
+    // rather than letting two surfaces drive the same command.
+    if (props.connected && state.slashMenuOpen && state.slashMenuStage) {
+      const escaping = event.key === "Escape";
+      if (escaping) {
+        event.preventDefault();
+      }
+      cancelSlashArgStage(props, requestUpdate);
+      if (escaping) {
         return;
       }
     }
@@ -675,6 +669,7 @@ export function renderChatComposer(props: ChatComposerProps) {
     ?.getSettings?.().facingMode;
   const mirrorCameraPreview = cameraFacingMode !== "environment";
   const slashMenuVisible = props.connected && canCompose && isSlashMenuVisible(state);
+  const slashArgStageVisible = props.connected && canCompose && isSlashArgStageVisible(state);
   const skillMenuVisible = props.connected && canCompose && isSkillMenuVisible(state);
   if (!skillMenuVisible && state.skillMenuOpen && !state.skillCommandRefreshPending) {
     resetSkillMenuState(state);
@@ -717,6 +712,7 @@ export function renderChatComposer(props: ChatComposerProps) {
     runControlsProps,
     mirrorCameraPreview,
     slashMenuVisible,
+    slashArgStageVisible,
     skillMenuVisible,
     activeSlashMenuOptionId,
     activeSlashMenuOptionLabel,

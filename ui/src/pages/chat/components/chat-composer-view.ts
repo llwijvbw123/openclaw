@@ -24,7 +24,7 @@ import { renderChatGoal } from "./chat-composer-goal.ts";
 import { renderChatComposerPlusMenu } from "./chat-composer-plus-menu.ts";
 import { renderChatQueue } from "./chat-composer-queue.ts";
 import { renderSkillMenu } from "./chat-composer-skill-menu.ts";
-import { renderSlashMenu } from "./chat-composer-slash-menu.ts";
+import { renderSlashArgStage, renderSlashMenu } from "./chat-composer-slash-menu.ts";
 import { commitComposerDraft } from "./chat-composer-state.ts";
 import {
   renderChatRunStatusIndicator,
@@ -63,6 +63,7 @@ type ChatComposerViewContext = {
   runControlsProps: ChatRunControlsProps;
   mirrorCameraPreview: boolean;
   slashMenuVisible: boolean;
+  slashArgStageVisible: boolean;
   skillMenuVisible: boolean;
   activeSlashMenuOptionId: string | null;
   activeSlashMenuOptionLabel: string;
@@ -98,6 +99,7 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
     runControlsProps,
     mirrorCameraPreview,
     slashMenuVisible,
+    slashArgStageVisible,
     skillMenuVisible,
     activeSlashMenuOptionId,
     activeSlashMenuOptionLabel,
@@ -105,6 +107,9 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
     slashMenuAnnouncementId,
     composerRunStatus,
   } = context;
+  // While arguments are staged the staged input is the combobox, so the message
+  // textarea must not also advertise the same listbox to assistive tech.
+  const textareaComboboxVisible = !slashArgStageVisible && (slashMenuVisible || skillMenuVisible);
   const disabledBanner = props.disabledBanner
     ? html`
         <div
@@ -227,6 +232,7 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
                 </div>`
               : nothing}
             ${slashMenuVisible ? renderSlashMenu(requestUpdate, props, visibleDraft) : nothing}
+            ${slashArgStageVisible ? renderSlashArgStage(requestUpdate, props) : nothing}
             ${skillMenuVisible ? renderSkillMenu(requestUpdate, props) : nothing}
             ${renderAttachmentPreview(props)}
             ${props.replyTarget
@@ -422,12 +428,12 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
                   ?readonly=${dictation?.locksComposer === true}
                   aria-autocomplete="list"
                   aria-controls=${ifDefined(
-                    slashMenuVisible || skillMenuVisible ? slashMenuListboxId : undefined,
+                    textareaComboboxVisible ? slashMenuListboxId : undefined,
                   )}
-                  aria-expanded=${ifDefined(
-                    slashMenuVisible || skillMenuVisible ? "true" : undefined,
+                  aria-expanded=${ifDefined(textareaComboboxVisible ? "true" : undefined)}
+                  aria-activedescendant=${ifDefined(
+                    textareaComboboxVisible ? (activeSlashMenuOptionId ?? undefined) : undefined,
                   )}
-                  aria-activedescendant=${ifDefined(activeSlashMenuOptionId ?? undefined)}
                   aria-describedby=${slashMenuAnnouncementId}
                   aria-keyshortcuts=${sendShortcut === "enter"
                     ? "Enter"

@@ -4,7 +4,7 @@ import type { SessionsListResult } from "../../../api/types.ts";
 import type { QuestionPrompt } from "../../../app/question-prompt.ts";
 import type { ChatSendShortcut } from "../../../app/settings.ts";
 import type { ChatAttachment, ChatQueueItem } from "../../../lib/chat/chat-types.ts";
-import type { SlashCommandDef } from "../../../lib/chat/commands.ts";
+import type { SlashCommandArgChoice, SlashCommandDef } from "../../../lib/chat/commands.ts";
 import type { ControlUiFollowUpMode } from "../../../lib/chat/follow-up-mode.ts";
 import type { ProviderUsageDisplayProps } from "../../../lib/provider-quota-summary.ts";
 import type { SessionToolOverrides } from "../../../lib/sessions/patch.ts";
@@ -163,13 +163,33 @@ type SkillMenuTarget = {
   query: string;
 };
 
+/**
+ * One argument stage of the selected slash command. A stage with choices renders
+ * the option list; a stage without them collects a free-form value. Both are
+ * driven from the same staged input so the chat draft never holds a half-typed
+ * command line.
+ */
+export type SlashArgStage = {
+  command: SlashCommandDef;
+  /** Values already committed for the preceding declared arguments, in order. */
+  values: string[];
+  /** Index into `command.argSpecs` of the argument this stage collects. */
+  index: number;
+  /** Options shown for this stage; empty means a free-form value stage. */
+  choices: SlashCommandArgChoice[];
+  /** Live text in the staged input: a filter for choices, the value otherwise. */
+  input: string;
+};
+
 export type ChatComposerState = {
   slashMenuOpen: boolean;
   slashMenuItems: SlashCommandDef[];
   slashMenuIndex: number;
-  slashMenuMode: "command" | "args";
-  slashMenuCommand: SlashCommandDef | null;
-  slashMenuArgItems: string[];
+  slashMenuStage: SlashArgStage | null;
+  /** Set when a stage opens so the staged input claims focus after the render. */
+  slashArgInputFocusPending: boolean;
+  slashArgInput: HTMLInputElement | null;
+  slashArgInputRef: ((element?: Element) => void) | null;
   slashCommandRefreshPending: boolean;
   skillMenuOpen: boolean;
   skillMenuItems: SlashCommandDef[];

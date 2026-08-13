@@ -12,6 +12,22 @@ export type SlashCommandCategory = "session" | "model" | "agents" | "tools";
 type SlashCommandTier = "essential" | "standard" | "power";
 type ChatIconName = string;
 
+/** One selectable value for a declared command argument. */
+export type SlashCommandArgChoice = { value: string; label: string };
+
+/**
+ * One declared command argument, kept per-argument so the composer can stage
+ * them one at a time instead of collapsing everything into the first argument.
+ */
+export type SlashCommandArgSpec = {
+  name: string;
+  description?: string;
+  required?: boolean;
+  choices?: SlashCommandArgChoice[];
+  /** Catalog declared a provider/model-dependent set the payload cannot carry. */
+  dynamic?: boolean;
+};
+
 export type SlashCommandDef = {
   key: string;
   name: string;
@@ -23,8 +39,8 @@ export type SlashCommandDef = {
   category?: SlashCommandCategory;
   /** When true, the command is executed client-side via RPC instead of sent to the agent. */
   executeLocal?: boolean;
-  /** Fixed argument choices for inline hints. */
-  argOptions?: string[];
+  /** Declared arguments in order; the composer stages one per step. */
+  argSpecs?: SlashCommandArgSpec[];
   /** Keyboard shortcut hint shown in the menu (display only). */
   shortcut?: string;
   /** Progressive disclosure tier. Defaults to "standard" when omitted. */
@@ -34,18 +50,16 @@ export type SlashCommandDef = {
   clientPresentation?: NonNullable<CommandEntry["clientPresentation"]>;
 };
 
-type LocalArgChoice = string | { value: string; label: string };
+type BuiltinChatCommand = ReturnType<typeof buildBuiltinChatCommands>[number];
+type BuiltinCommandArg = NonNullable<BuiltinChatCommand["args"]>[number];
+type RawArgChoice = string | { value: string; label: string };
 
 type CommandLike = {
   key: string;
   name: string;
   aliases?: string[];
   description: string;
-  args?: Array<{
-    name: string;
-    required?: boolean;
-    choices?: LocalArgChoice[];
-  }>;
+  args?: SlashCommandArgSpec[];
   category?: string;
   tier?: string;
   source?: "native" | "plugin" | "skill";
@@ -61,6 +75,7 @@ const MAX_REMOTE_CHOICES = 50;
 const MAX_REMOTE_NAME_LENGTH = 200;
 const MAX_REMOTE_DESCRIPTION_LENGTH = 2_000;
 const MAX_REMOTE_ARG_NAME_LENGTH = 200;
+const MAX_REMOTE_ARG_DESCRIPTION_LENGTH = 500;
 
 const COMMAND_ICON_OVERRIDES: Partial<Record<string, ChatIconName>> = {
   help: "book",
@@ -121,6 +136,7 @@ const UI_ONLY_COMMANDS: SlashCommandDef[] = [
     description: "Abort and restart with a new message",
     descriptionKey: "chat.commands.redirectDescription",
     args: "<message>",
+    argSpecs: [{ name: "message", required: true }],
     icon: "refresh",
     category: "agents",
     executeLocal: true,
@@ -195,17 +211,8 @@ function formatArgs(command: CommandLike): string | undefined {
     .join(" ");
 }
 
-function choiceToValue(choice: LocalArgChoice): string {
-  return typeof choice === "string" ? choice : choice.value;
-}
-
-function getArgOptions(command: CommandLike): string[] | undefined {
-  const firstArg = command.args?.[0];
-  if (!firstArg) {
-    return undefined;
-  }
-  const options = firstArg.choices?.map(choiceToValue).filter(Boolean);
-  return options?.length ? options : undefined;
+function toArgChoice(choice: RawArgChoice): SlashCommandArgChoice {
+  return typeof choice === "string" ? { value: choice, label: choice } : choice;
 }
 
 function mapCategory(command: CommandLike): SlashCommandCategory {
@@ -258,7 +265,7 @@ function toSlashCommand(
     icon: mapIcon(command),
     category: mapCategory(command),
     executeLocal: source === "local" && LOCAL_COMMANDS.has(command.key),
-    argOptions: getArgOptions(command),
+    argSpecs: command.args?.length ? command.args : undefined,
     tier: source === "local" ? mapTier(command) : "standard",
     ...(resolvedSource ? { source: resolvedSource } : {}),
     ...(command.skillModelVisible !== undefined
@@ -294,10 +301,7 @@ function getEntryArgs(
     .filter((arg): arg is Record<string, unknown> => arg !== null);
 }
 
-function getArgChoices(arg: Record<string, unknown>): LocalArgChoice[] {
-  if (arg.dynamic === true) {
-    return [];
-  }
+function getArgChoices(arg: Record<string, unknown>): SlashCommandArgChoice[] {
   const rawChoices = arg.choices;
   if (!Array.isArray(rawChoices)) {
     return [];
@@ -305,23 +309,17 @@ function getArgChoices(arg: Record<string, unknown>): LocalArgChoice[] {
   return rawChoices
     .map((choice) => {
       if (typeof choice === "string") {
-        return clampText(choice, MAX_REMOTE_NAME_LENGTH);
+        const value = clampText(choice, MAX_REMOTE_NAME_LENGTH);
+        return { value, label: value };
       }
       const record = asRecord(choice);
       if (!record) {
         return null;
       }
-      return {
-        value: clampText(record.value, MAX_REMOTE_NAME_LENGTH),
-        label: clampText(record.label, MAX_REMOTE_NAME_LENGTH),
-      };
+      const value = clampText(record.value, MAX_REMOTE_NAME_LENGTH);
+      return { value, label: clampText(record.label, MAX_REMOTE_NAME_LENGTH) || value };
     })
-    .filter((choice): choice is LocalArgChoice => {
-      if (!choice) {
-        return false;
-      }
-      return typeof choice === "string" ? Boolean(choice) : Boolean(choice.value);
-    });
+    .filter((choice): choice is SlashCommandArgChoice => Boolean(choice?.value));
 }
 
 function normalizeClientPresentation(
@@ -349,6 +347,26 @@ function normalizeClientPresentation(
   return { when: "no-arguments", action: { kind: "device-pairing" } };
 }
 
+/**
+ * Builtin choice providers are browser-safe registry functions, so the menu
+ * resolves them here instead of advertising an empty set for /think and /fast.
+ * Config-derived context is unavailable in the browser; the providers fall back
+ * to their own defaults when it is omitted.
+ */
+function toBuiltinArgSpec(
+  command: BuiltinChatCommand,
+  arg: BuiltinCommandArg,
+): SlashCommandArgSpec {
+  const raw = typeof arg.choices === "function" ? arg.choices({ command, arg }) : arg.choices;
+  const choices = raw?.map(toArgChoice).filter((choice) => Boolean(choice.value)) ?? [];
+  return Object.assign(
+    { name: arg.name },
+    arg.description ? { description: arg.description } : {},
+    arg.required ? { required: true } : {},
+    choices.length > 0 ? { choices } : {},
+  );
+}
+
 function buildLocalSlashCommands(): SlashCommandDef[] {
   const builtins = buildBuiltinChatCommands()
     .map((command) => ({
@@ -356,11 +374,7 @@ function buildLocalSlashCommands(): SlashCommandDef[] {
       name: command.textAliases[0]?.replace(/^\//u, "") ?? command.key,
       aliases: command.textAliases,
       description: command.description,
-      args: command.args?.map((arg) => ({
-        name: arg.name,
-        required: arg.required,
-        choices: Array.isArray(arg.choices) ? arg.choices : undefined,
-      })),
+      args: command.args?.map((arg) => toBuiltinArgSpec(command, arg)),
       category: command.category,
       tier: command.tier,
     }))
@@ -402,16 +416,23 @@ function normalizeCommandEntry(
     .slice(0, MAX_REMOTE_ARGS)
     .map((arg) => ({
       name: clampText(arg.name, MAX_REMOTE_ARG_NAME_LENGTH),
+      description: clampText(arg.description, MAX_REMOTE_ARG_DESCRIPTION_LENGTH),
       required: arg.required === true,
+      // A dynamic set is provider/model dependent and never travels in the
+      // catalog payload, so the composer degrades that stage to a value input.
+      dynamic: arg.dynamic === true,
       choices: getArgChoices(arg).slice(0, MAX_REMOTE_CHOICES),
     }))
     .filter((arg) => arg.name.length > 0)
-    .map((arg) =>
-      Object.assign(
-        { name: arg.name },
-        arg.required ? { required: true } : {},
-        arg.choices.length > 0 ? { choices: arg.choices } : {},
-      ),
+    .map(
+      (arg): SlashCommandArgSpec =>
+        Object.assign(
+          { name: arg.name },
+          arg.description ? { description: arg.description } : {},
+          arg.required ? { required: true } : {},
+          arg.dynamic ? { dynamic: true } : {},
+          arg.choices.length > 0 ? { choices: arg.choices } : {},
+        ),
     );
   return {
     key: primaryName,
