@@ -55,7 +55,6 @@ export type SidebarNarrationSyncInput = {
   connectionIdentity: object | null;
   source: SessionCapability | null;
   rows: readonly SidebarRecentSession[];
-  openSessionKey: string;
   agentId: string;
 };
 
@@ -155,10 +154,7 @@ export class SidebarSessionNarrationController {
 
     const candidates = input.rows
       .map((row, index) => ({ row, index }))
-      .filter(
-        ({ row }) =>
-          row.hasActiveRun && !areUiSessionKeysEquivalent(row.key, input.openSessionKey.trim()),
-      )
+      .filter(({ row }) => row.hasActiveRun)
       .toSorted(
         (left, right) => rowRecency(right.row) - rowRecency(left.row) || left.index - right.index,
       )
