@@ -39,31 +39,12 @@ function normalizeExplicitMatrixTarget(target: string) {
   return /^[!@#]/u.test(normalized) && normalized.includes(":") ? normalized : undefined;
 }
 
-function encodeQaThreadComponent(value: string) {
-  return value.replaceAll("%", "%25").replaceAll("/", "%2F");
-}
-
 function resolveMatrixQaTarget(target: string) {
   const explicitTarget = normalizeExplicitMatrixTarget(target);
   if (explicitTarget) {
     return explicitTarget;
   }
   if (target.startsWith("thread:")) {
-    if (target.startsWith("thread:/v1/")) {
-      const rest = target.slice("thread:/v1/".length);
-      const separator = rest.indexOf("/");
-      if (separator > 0) {
-        try {
-          const conversationId = decodeURIComponent(rest.slice(0, separator));
-          const resolvedConversationId =
-            normalizeExplicitMatrixTarget(conversationId) ??
-            resolveMatrixQaConversationId(conversationId);
-          return `thread:/v1/${encodeQaThreadComponent(resolvedConversationId)}${rest.slice(separator)}`;
-        } catch {
-          return target;
-        }
-      }
-    }
     const threadTarget = target.slice("thread:".length);
     const separator = threadTarget.indexOf("/");
     if (separator > 0) {
@@ -130,9 +111,11 @@ export function resolveCrablineStateConversation(params: {
 export function createCrablineProviderDelivery(
   adapter: StartedOpenClawCrablineCorrelatedAdapter,
   target: string,
+  threadId?: string,
 ) {
   const { providerTargetKey, ...delivery } = adapter.createAgentDelivery({
     target: adapter.channel === "matrix" ? resolveMatrixQaTarget(target) : target,
+    threadId,
   });
   return { delivery, providerTargetKey };
 }

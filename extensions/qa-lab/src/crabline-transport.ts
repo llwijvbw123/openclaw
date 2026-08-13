@@ -21,6 +21,7 @@ import {
   resolveCrablineStateConversation,
 } from "./crabline-provider-targets.js";
 import { discardIgnoredResponseBody } from "./ignored-response-body.js";
+import { buildQaConversationTarget, parseQaTarget } from "./qa-bus-protocol.js";
 import {
   QaStateBackedTransportAdapter,
   waitForQaTransportAccountReady,
@@ -48,18 +49,16 @@ type QaCrablineTransportState = QaTransportState & {
   cleanup: () => Promise<void>;
   getOutboundEvents: () => Promise<readonly QaTransportOutboundEvent[]>;
   observeEvent: (event: unknown) => void;
-  rememberProviderTarget: (providerTargetKey: string, qaTarget: string) => void;
+  rememberProviderTarget: (providerTargetKey: string, target: QaCrablineTarget) => void;
 };
 
-function encodeQaThreadComponent(value: string) {
-  return value.replaceAll("%", "%25").replaceAll("/", "%2F");
-}
+type QaCrablineTarget = Pick<QaBusInboundMessageInput, "conversation" | "threadId">;
 
-function formatLogicalQaTarget({ conversation, threadId }: QaBusInboundMessageInput) {
-  const prefix = conversation.kind === "direct" ? "dm" : conversation.kind;
-  return threadId
-    ? `thread:/v1/${conversation.kind === "direct" ? "dm/" : ""}${encodeQaThreadComponent(conversation.id)}/${encodeQaThreadComponent(threadId)}`
-    : `${prefix}:${conversation.id}`;
+function qaTargetForInput(input: QaBusInboundMessageInput): QaCrablineTarget {
+  return {
+    conversation: { ...input.conversation },
+    ...(input.threadId ? { threadId: input.threadId } : {}),
+  };
 }
 
 function normalizeCrablineSignalGatewayConfig(config: OpenClawConfig): OpenClawConfig {
@@ -215,7 +214,7 @@ function createCrablineState(params: {
   state: QaBusState;
 }): QaCrablineTransportState {
   const baseState = params.state;
-  const targetByProviderTarget = new Map<string, string>();
+  const targetByProviderTarget = new Map<string, QaCrablineTarget>();
   const telegramMessageByProviderId = new Map<string, QaBusMessage>();
   const pendingTelegramMessagesByChat = new Map<string, QaBusMessage[]>();
   const outboundEvents: QaTransportOutboundEvent[] = [];
@@ -257,10 +256,33 @@ function createCrablineState(params: {
               },
             }
           : event;
-      const outbound = params.adapter.createOutboundFromRecorderEvent({
-        event: normalizedEvent,
-        targetByProviderTarget,
-      }) as QaBusOutboundMessageInput | null;
+      const observation = params.adapter.createOutboundObservation({ event: normalizedEvent });
+      const target = observation?.providerTargetKeys
+        .map((key) => targetByProviderTarget.get(key))
+        .find((candidate) => candidate !== undefined);
+      const outbound: QaBusOutboundMessageInput | null = observation
+        ? target
+          ? {
+              accountId: observation.accountId,
+              senderId: observation.senderId,
+              senderName: observation.senderName,
+              text: observation.text,
+              to: buildQaConversationTarget({
+                chatType: target.conversation.kind,
+                conversationId: target.conversation.id,
+              }),
+              threadId: target.threadId,
+            }
+          : observation.fallbackTarget
+            ? {
+                accountId: observation.accountId,
+                senderId: observation.senderId,
+                senderName: observation.senderName,
+                text: observation.text,
+                to: observation.fallbackTarget,
+              }
+            : null
+        : null;
       if (outbound) {
         baseState.addOutboundMessage(outbound);
       }
@@ -280,9 +302,7 @@ function createCrablineState(params: {
           inbound: providerInbound,
           response: ingress.response,
         }),
-        params.adapter.channel === "matrix" || input.conversation.kind === "channel"
-          ? formatLogicalQaTarget(input)
-          : providerInbound.qaTarget,
+        qaTargetForInput(input),
       );
       return baseState.addInboundMessage(
         {
@@ -292,13 +312,12 @@ function createCrablineState(params: {
             input,
             providerInbound,
           }),
-          ...(providerInbound.threadId ? { threadId: providerInbound.threadId } : {}),
         },
         ingress.providerMessageId,
       );
     },
-    rememberProviderTarget(providerTargetKey, qaTarget) {
-      targetByProviderTarget.set(providerTargetKey, qaTarget);
+    rememberProviderTarget(providerTargetKey, target) {
+      targetByProviderTarget.set(providerTargetKey, target);
     },
     addOutboundMessage: baseState.addOutboundMessage.bind(baseState),
     readMessage: baseState.readMessage.bind(baseState),
@@ -404,9 +423,24 @@ class QaCrablineTransport extends QaStateBackedTransportAdapter {
       channel: this.#adapter.channel,
     });
 
-  buildAgentDelivery = ({ target }: { target: string }) => {
-    const { delivery, providerTargetKey } = createCrablineProviderDelivery(this.#adapter, target);
-    this.#state.rememberProviderTarget(providerTargetKey, target);
+  buildAgentDelivery = ({ target, threadId }: { target: string; threadId?: string }) => {
+    const parsed = parseQaTarget(target);
+    if (parsed.threadId && threadId && parsed.threadId !== threadId) {
+      throw new Error("Crabline delivery received conflicting thread targets");
+    }
+    const logicalTarget = {
+      conversation: { id: parsed.conversationId, kind: parsed.chatType },
+      threadId: threadId ?? parsed.threadId,
+    };
+    const { delivery, providerTargetKey } = createCrablineProviderDelivery(
+      this.#adapter,
+      buildQaConversationTarget({
+        chatType: logicalTarget.conversation.kind,
+        conversationId: logicalTarget.conversation.id,
+      }),
+      logicalTarget.threadId,
+    );
+    this.#state.rememberProviderTarget(providerTargetKey, logicalTarget);
     return delivery;
   };
 

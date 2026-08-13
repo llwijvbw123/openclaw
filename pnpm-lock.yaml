@@ -1608,8 +1608,8 @@ importers:
         specifier: 1.30.0
         version: 1.30.0(supports-color@10.2.2)(zod@4.4.3)
       '@openclaw/crabline':
-        specifier: 0.1.15
-        version: 0.1.15
+        specifier: 0.1.16
+        version: 0.1.16
       p-limit:
         specifier: 7.3.1
         version: 7.3.1
@@ -4093,8 +4093,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@openclaw/crabline@0.1.15':
-    resolution: {integrity: sha512-3MdLWb08j0nDyV13xmD3Nop8NrHQb1waHYkbDaKl8k012y4dhIVmQhcypp/hVE85m5ISiAw0J+k8th4/Rbt1Gg==}
+  '@openclaw/crabline@0.1.16':
+    resolution: {integrity: sha512-GFoeIHSxtbHmbA3mmbwCsdj5myRf2TBthTVNUfwGVvQAGcPtcZ3k9uvzrF/lKBoHh4OdTDhR3HvQfDm15ccMNg==}
     engines: {node: '>=22'}
     hasBin: true
 
@@ -11362,7 +11362,7 @@ snapshots:
   '@openai/codex@0.147.0-win32-x64':
     optional: true
 
-  '@openclaw/crabline@0.1.15':
+  '@openclaw/crabline@0.1.16':
     dependencies:
       '@types/node': 22.20.1
       commander: 15.0.0

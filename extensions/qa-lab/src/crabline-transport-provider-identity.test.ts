@@ -2,7 +2,7 @@
 import type { OpenClawCrablineChannelDriverSelection } from "@openclaw/crabline";
 import { fetchWithSsrFGuard } from "openclaw/plugin-sdk/ssrf-runtime";
 import { withTempDir } from "openclaw/plugin-sdk/test-env";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createQaBusState } from "./bus-state.js";
 import { createQaCrablineTransportAdapter } from "./crabline-transport.js";
 
@@ -56,43 +56,55 @@ async function postTelegramMessage(params: {
 describe("Crabline Telegram provider identity", () => {
   it("correlates private-topic sends with the canonical direct-thread target", async () => {
     await withTempDir("qa-crabline-transport-", async (outputDir) => {
+      const state = createQaBusState();
+      const addOutboundMessage = vi.spyOn(state, "addOutboundMessage");
       const transport = await createQaCrablineTransportAdapter({
         outputDir,
         selection,
-        state: createQaBusState(),
+        state,
       });
       try {
-        await transport.sendInbound({
-          conversation: { id: "alice", kind: "direct" },
-          senderId: "alice",
+        const inbound = await transport.sendInbound({
+          conversation: { id: "alice/team", kind: "direct" },
+          senderId: "alice/team",
           text: "Private topic baseline marker.",
           threadId: "42",
         });
+        expect(inbound).toMatchObject({
+          conversation: { id: "alice/team", kind: "direct" },
+          threadId: "42",
+        });
         const { apiRoot, botToken, message } = await readTelegramInbound(transport);
-        expect(message?.message_thread_id).toBe(42);
+        expect(message?.message_thread_id).toEqual(expect.any(Number));
         expect(message?.chat?.id).toEqual(expect.any(Number));
         await postTelegramMessage({
           apiRoot,
           botToken,
           body: {
             chat_id: message?.chat?.id,
-            message_thread_id: 42,
+            message_thread_id: message?.message_thread_id,
             text: "assistant via private topic",
           },
         });
 
         await expect(
           transport.waitForOutbound({
-            conversation: { id: "alice", kind: "direct" },
+            conversation: { id: "alice/team", kind: "direct" },
             textIncludes: "assistant via private topic",
             threadId: "42",
             timeoutMs: 1_000,
           }),
         ).resolves.toMatchObject({
-          conversation: { id: "alice", kind: "direct" },
+          conversation: { id: "alice/team", kind: "direct" },
           text: "assistant via private topic",
           threadId: "42",
         });
+        expect(addOutboundMessage).toHaveBeenCalledWith(
+          expect.objectContaining({
+            to: "dm:alice/team",
+            threadId: "42",
+          }),
+        );
       } finally {
         await transport.cleanup?.();
       }

@@ -774,11 +774,11 @@ describe("crabline transport", () => {
           to: "room:!qa:matrix.test",
         });
         expect(() => transport.buildAgentDelivery({ target: "group:" })).toThrow(
-          "Matrix QA conversation id must be non-empty",
+          "invalid qa-channel group target",
         );
-        expect(() => transport.buildAgentDelivery({ target: "thread:/v1/main/%24event" })).toThrow(
-          "Matrix thread targets require OpenClaw QA thread forwarding",
-        );
+        expect(() =>
+          transport.buildAgentDelivery({ target: "thread:main/$event:matrix.test" }),
+        ).toThrow("Matrix thread targets require OpenClaw QA thread forwarding");
         await expect(
           transport.state.addInboundMessage({
             conversation: { id: "  ", kind: "group" },

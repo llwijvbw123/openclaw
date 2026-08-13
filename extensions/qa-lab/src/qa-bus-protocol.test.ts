@@ -3,16 +3,29 @@ import {
   sanitizeQaBusToolCalls as sanitizeCanonicalQaBusToolCalls,
 } from "openclaw/plugin-sdk/qa-channel-protocol";
 import { describe, expect, it } from "vitest";
-import { parseQaTarget, sanitizeQaBusToolCalls } from "./qa-bus-protocol.js";
+import {
+  buildQaConversationTarget,
+  parseQaTarget,
+  sanitizeQaBusToolCalls,
+} from "./qa-bus-protocol.js";
 
 describe("QA Lab package bus protocol", () => {
+  it.each(["direct", "group", "channel"] as const)(
+    "builds the canonical base target for %s conversations",
+    (chatType) => {
+      const conversationId = "Case/Room";
+      expect(buildQaConversationTarget({ chatType, conversationId })).toBe(
+        `${chatType === "direct" ? "dm" : chatType}:${conversationId}`,
+      );
+    },
+  );
+
   it.each([
     "bare-id",
     "channel:CaseSensitive",
     "group:team-room",
     "dm:user-1",
     "thread:Room/Topic",
-    "thread:/v1/dm/Alice%2FSmith/Topic%2F1",
   ])("matches the canonical target parser for %s", (target) => {
     expect(parseQaTarget(target)).toEqual(parseCanonicalQaTarget(target));
   });
