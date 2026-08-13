@@ -8,6 +8,7 @@ import {
   expectDefined,
   installMockGateway,
   pauseVirtualClock,
+  requireRecord,
 } from "./chat-flow.test-support.ts";
 
 const suite = createChatFlowE2eSuite();
@@ -73,7 +74,7 @@ suite.define(() => {
       await expect
         .poll(async () =>
           (await gateway.getRequests("sessions.messages.subscribe")).some(
-            (request) => request.params.key === secondKey,
+            (request) => requireRecord(request.params).key === secondKey,
           ),
         )
         .toBe(true);
