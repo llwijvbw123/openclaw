@@ -574,6 +574,22 @@ export const systemAgentHandlers: GatewayRequestHandlers = {
           );
           return;
         }
+        const connectionOwnerId = ownerKey.startsWith("connection:")
+          ? client?.connId?.trim()
+          : undefined;
+        const rejectInactiveConnectionOwner = (): boolean => {
+          if (!connectionOwnerId || context.isConnectionActive?.(connectionOwnerId) !== false) {
+            return false;
+          }
+          respond(
+            false,
+            undefined,
+            errorShape(ErrorCodes.UNAVAILABLE, "OpenClaw connection is no longer active.", {
+              details: buildSystemAgentSessionInvalidatedErrorDetails(),
+            }),
+          );
+          return true;
+        };
         const boundSession = sessions.get(sessionId);
         if (boundSession && boundSession.ownerKey !== ownerKey) {
           respond(
@@ -712,6 +728,11 @@ export const systemAgentHandlers: GatewayRequestHandlers = {
                 respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, error.message));
                 return;
               }
+              // A dead connection-only request cannot consume capacity by
+              // destructively evicting another caller's live session.
+              if (rejectInactiveConnectionOwner()) {
+                return;
+              }
               if (!(await evictOldestSession(sessions, context))) {
                 respond(
                   false,
@@ -724,19 +745,7 @@ export const systemAgentHandlers: GatewayRequestHandlers = {
                 );
                 return;
               }
-              const connectionId = client?.connId?.trim();
-              if (
-                ownerKey.startsWith("connection:") &&
-                connectionId &&
-                context.isConnectionActive?.(connectionId) === false
-              ) {
-                respond(
-                  false,
-                  undefined,
-                  errorShape(ErrorCodes.UNAVAILABLE, "OpenClaw connection is no longer active.", {
-                    details: buildSystemAgentSessionInvalidatedErrorDetails(),
-                  }),
-                );
+              if (rejectInactiveConnectionOwner()) {
                 return;
               }
               assertSystemAgentSessionStoreActive(sessions);
