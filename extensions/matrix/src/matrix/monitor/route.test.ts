@@ -18,6 +18,16 @@ const baseCfg = {
   },
 } satisfies OpenClawConfig;
 
+const threadCfg = {
+  ...baseCfg,
+  bindings: [
+    {
+      agentId: "main",
+      match: { channel: "matrix", accountId: "ops" },
+    },
+  ],
+} satisfies OpenClawConfig;
+
 type RouteBinding = NonNullable<OpenClawConfig["bindings"]>[number];
 type RoutePeer = NonNullable<RouteBinding["match"]["peer"]>;
 
