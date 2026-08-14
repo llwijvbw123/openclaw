@@ -1,4 +1,5 @@
 // Control UI E2E covers staged slash command arguments end to end.
+import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { expect, it } from "vitest";
 import { installMockGateway } from "../test-helpers/control-ui-e2e.ts";
@@ -7,6 +8,9 @@ import { createControlUiE2eSuite } from "./control-ui-e2e-suite.test-support.ts"
 const suite = createControlUiE2eSuite({
   name: "Control UI staged command arguments",
 });
+
+const ARTIFACT_DIR = path.resolve(".artifacts/control-ui-e2e/command-args");
+const VIEWPORT = { height: 900, width: 1280 } as const;
 
 /**
  * `/deploy` mirrors the composite shape of the built-in `/session`: a choice for
@@ -46,104 +50,113 @@ const commands = [
   },
 ];
 
+function startupResponse(sessionId: string) {
+  return {
+    agentsList: {
+      agents: [{ id: "main", name: "OpenClaw" }],
+      defaultId: "main",
+      mainKey: "main",
+      scope: "agent" as const,
+    },
+    messages: [],
+    metadata: { commands, models: [] },
+    sessionId,
+    thinkingLevel: null,
+  };
+}
+
 suite.define(() => {
-  it("stages composite and free-form command arguments without a chat turn", async () => {
-    const artifactDir = process.env.OPENCLAW_UI_E2E_ARTIFACT_DIR?.trim();
-    await suite.withPage({ viewport: { width: 1280, height: 900 } }, async ({ page }) => {
-      const gateway = await installMockGateway(page, {
-        deferredMethods: ["chat.send"],
-        methodResponses: {
-          "chat.startup": {
-            agentsList: {
-              agents: [{ id: "main", name: "OpenClaw" }],
-              defaultId: "main",
-              mainKey: "main",
-              scope: "agent",
-            },
-            messages: [],
-            metadata: { commands, models: [] },
-            sessionId: "staged-command-args-session",
-            thinkingLevel: null,
+  for (const theme of ["light", "dark"] as const) {
+    it(`stages composite command arguments without a chat turn (${theme})`, async () => {
+      await mkdir(ARTIFACT_DIR, { recursive: true });
+      await suite.withPage({ colorScheme: theme, viewport: VIEWPORT }, async ({ page }) => {
+        const gateway = await installMockGateway(page, {
+          deferredMethods: ["chat.send"],
+          methodResponses: {
+            "chat.startup": startupResponse(`staged-command-args-${theme}`),
+            "commands.list": { commands },
           },
-          "commands.list": { commands },
-        },
-      });
+        });
 
-      await page.goto(`${suite.server.baseUrl}chat`);
-      await gateway.waitForRequest("chat.startup");
+        await page.goto(`${suite.server.baseUrl}chat`);
+        await gateway.waitForRequest("chat.startup");
+        // Proves the forced color scheme actually reached the app shell, so a
+        // "dark" artifact can never be a light screenshot with a dark filename.
+        await expect.poll(() => page.locator("html").getAttribute("data-theme-mode")).toBe(theme);
 
-      const composer = page.locator(".agent-chat__composer-combobox textarea");
-      await composer.waitFor({ state: "visible" });
-      await expect.poll(() => composer.isEnabled()).toBe(true);
+        const composer = page.locator(".agent-chat__composer-combobox textarea");
+        await composer.waitFor({ state: "visible" });
+        await expect.poll(() => composer.isEnabled()).toBe(true);
 
-      // Phase 1: the command menu.
-      await composer.fill("/deploy");
-      const menu = page.locator(".slash-menu[role='listbox']");
-      await menu.waitFor({ state: "visible" });
-      if (artifactDir) {
-        await page.screenshot({ path: path.join(artifactDir, "command-args-1-menu.png") });
-      }
+        // Phase 1: the command menu.
+        await composer.fill("/deploy");
+        const menu = page.locator(".slash-menu[role='listbox']");
+        await menu.waitFor({ state: "visible" });
+        await page.screenshot({
+          animations: "disabled",
+          path: path.join(ARTIFACT_DIR, `${theme}-1-command-menu.png`),
+        });
 
-      // Phase 2: the action choices, rendered by label.
-      await composer.press("Enter");
-      const stageInput = page.locator(".slash-arg-stage__input");
-      await stageInput.waitFor({ state: "visible" });
-      await expect
-        .poll(() => menu.getByRole("option").locator(".slash-menu-name").allTextContents())
-        .toEqual(["Restart", "Scale"]);
-      // The chosen command never lands in the message textarea.
-      await expect.poll(() => composer.inputValue()).toBe("");
-      await expect
-        .poll(() => stageInput.evaluate((node) => document.activeElement === node))
-        .toBe(true);
-      if (artifactDir) {
-        await page.screenshot({ path: path.join(artifactDir, "command-args-2-choices.png") });
-      }
+        // Phase 2: the action choices, rendered by label.
+        await composer.press("Enter");
+        const stageInput = page.locator(".slash-arg-stage__input");
+        await stageInput.waitFor({ state: "visible" });
+        await expect
+          .poll(() => menu.getByRole("option").locator(".slash-menu-name").allTextContents())
+          .toEqual(["Restart", "Scale"]);
+        // The chosen command never lands in the message textarea.
+        await expect.poll(() => composer.inputValue()).toBe("");
+        await expect
+          .poll(() => stageInput.evaluate((node) => document.activeElement === node))
+          .toBe(true);
+        await page.screenshot({
+          animations: "disabled",
+          path: path.join(ARTIFACT_DIR, `${theme}-2-argument-choices.png`),
+        });
 
-      // Phase 3: picking the action chains to the value stage instead of running.
-      await stageInput.press("ArrowDown");
-      await stageInput.press("Enter");
-      await expect
-        .poll(() => page.locator(".slash-arg-stage__prefix").textContent())
-        .toBe("/deploy scale");
-      await expect.poll(() => stageInput.getAttribute("placeholder")).toBe("Target replica count");
-      expect(await gateway.getRequests("chat.send")).toHaveLength(0);
-      if (artifactDir) {
-        await page.screenshot({ path: path.join(artifactDir, "command-args-3-staged-value.png") });
-      }
+        // Phase 3: picking the action chains to the value stage instead of running.
+        await stageInput.press("ArrowDown");
+        await stageInput.press("Enter");
+        await expect
+          .poll(() => page.locator(".slash-arg-stage__prefix").textContent())
+          .toBe("/deploy scale");
+        await expect
+          .poll(() => stageInput.getAttribute("placeholder"))
+          .toBe("Target replica count");
+        expect(await gateway.getRequests("chat.send")).toHaveLength(0);
+        await page.screenshot({
+          animations: "disabled",
+          path: path.join(ARTIFACT_DIR, `${theme}-3-staged-value.png`),
+        });
 
-      // Phase 4: the assembled command runs once the last argument is supplied.
-      await stageInput.fill("3");
-      await stageInput.press("Enter");
-      const sendRequest = await gateway.waitForRequest("chat.send");
-      expect(
-        typeof sendRequest.params === "object" &&
+        // Phase 4: the assembled command runs once the last argument is supplied.
+        await stageInput.fill("3");
+        await page.screenshot({
+          animations: "disabled",
+          path: path.join(ARTIFACT_DIR, `${theme}-4-value-entered.png`),
+        });
+        await stageInput.press("Enter");
+        const sendRequest = await gateway.waitForRequest("chat.send");
+        const sentText =
+          typeof sendRequest.params === "object" &&
           sendRequest.params !== null &&
           "text" in sendRequest.params
-          ? sendRequest.params.text
-          : "",
-      ).toBe("/deploy scale 3");
-      await expect.poll(() => page.locator(".slash-arg-stage").count()).toBe(0);
+            ? sendRequest.params.text
+            : "";
+        // The regression this PR fixes: the send used to fire with empty text
+        // because the command was routed through the draft and read back.
+        expect(sentText).toBe("/deploy scale 3");
+        await expect.poll(() => page.locator(".slash-arg-stage").count()).toBe(0);
+      });
     });
-  });
+  }
 
   it("cancels a staged argument back into the message composer", async () => {
-    await suite.withPage({ viewport: { width: 1280, height: 900 } }, async ({ page }) => {
+    await suite.withPage({ viewport: VIEWPORT }, async ({ page }) => {
       const gateway = await installMockGateway(page, {
         deferredMethods: ["chat.send"],
         methodResponses: {
-          "chat.startup": {
-            agentsList: {
-              agents: [{ id: "main", name: "OpenClaw" }],
-              defaultId: "main",
-              mainKey: "main",
-              scope: "agent",
-            },
-            messages: [],
-            metadata: { commands, models: [] },
-            sessionId: "staged-command-cancel-session",
-            thinkingLevel: null,
-          },
+          "chat.startup": startupResponse("staged-command-cancel"),
           "commands.list": { commands },
         },
       });
