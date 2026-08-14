@@ -1135,8 +1135,7 @@ function managedAudioBlocks(content: Array<Record<string, unknown>>) {
 }
 
 function bindTestToolAuthority(operation: ReplyOperation) {
-  operation.bindToolAuthorityProjector(() => "test-authority");
-  operation.bindToolAuthorityFingerprint("test-authority");
+  operation.bindToolAuthorityProjector(() => TEST_TOOL_AUTHORITY_FINGERPRINT);
   operation.bindToolAuthorityRoute({ provider: "anthropic", model: "test-model" });
 }
 
