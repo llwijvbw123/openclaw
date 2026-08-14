@@ -1,12 +1,12 @@
 import { html, nothing, type TemplateResult } from "lit";
 // Deep import on purpose: the protocol barrel carries typebox and every
 // schema, which must stay out of the Control UI startup bundle.
-import { isCloudWorkerPlacementState } from "../../../packages/gateway-protocol/src/schema/session-placement-state.js";
 import type { SessionPlacementDiskSpace } from "../../../packages/gateway-protocol/src/schema/session-placement.js";
 import type { SessionCatalogPullRequestSummary } from "../../../packages/gateway-protocol/src/schema/sessions-catalog.js";
 import type { GatewaySessionRow } from "../api/types.ts";
 import { t } from "../i18n/index.ts";
 import { icons } from "./icons.ts";
+import type { SessionPullRequestIndicatorState } from "./session-menu-work.ts";
 
 export type SessionPlacementState = NonNullable<GatewaySessionRow["placement"]>["state"];
 
@@ -56,6 +56,30 @@ function renderSessionRowBadge(
   </openclaw-tooltip>`;
 }
 
+export function describeSessionWorktreePullRequest(
+  state: SessionPullRequestIndicatorState,
+): string {
+  return state === "none"
+    ? ""
+    : state === "open"
+      ? t("sessionsView.openPullRequest")
+      : t("chat.pullRequests.merged");
+}
+
+export function renderSessionWorktreePullRequest(state: SessionPullRequestIndicatorState) {
+  if (state === "none") {
+    return nothing;
+  }
+  const label = describeSessionWorktreePullRequest(state);
+  return html`<span
+    class="sidebar-session-pr-indicator sidebar-session-pr-indicator--${state}"
+    data-session-pr-state=${state}
+    role="img"
+    aria-label=${label}
+    >${icons.gitBranch}</span
+  >`;
+}
+
 export function renderSessionRowBadges(params: {
   isChild?: boolean;
   incognito?: boolean;
@@ -73,15 +97,12 @@ export function renderSessionRowBadges(params: {
     ? formatSessionPullRequestSummary(params.pullRequest)
     : undefined;
   const pullRequestState = params.pullRequest?.state;
-  const placementState = params.isChild ? undefined : params.placementState;
-  const cloudPlacementState = isCloudWorkerPlacementState(placementState)
-    ? placementState
-    : undefined;
   const workspaceConflictCount = Math.max(0, Math.floor(params.workspaceConflictCount ?? 0));
-  // Child rows suppress ordinary placement chrome, but a retained conflict must stay discoverable.
-  const conflictPlacementState = workspaceConflictCount > 0 ? params.placementState : undefined;
-  const displayedPlacementState = cloudPlacementState ?? conflictPlacementState;
   const hasWorkspaceConflict = workspaceConflictCount > 0;
+  // Healthy cloud placement is context, not row state: it belongs to the
+  // session's details, and only an actionable conflict earns a persistent
+  // marker here. Dropping the conflict marker would strand a blocked workspace.
+  const displayedPlacementState = hasWorkspaceConflict ? params.placementState : undefined;
   const diskSpaceStatus = params.isChild ? undefined : params.diskSpaceStatus;
   const diskSpaceLabel =
     diskSpaceStatus === "critical"
@@ -103,7 +124,6 @@ export function renderSessionRowBadges(params: {
     !params.hasApproval &&
     outboxCount === 0 &&
     !params.hasComposerDraft &&
-    !displayedPlacementState &&
     !hasWorkspaceConflict
   ) {
     return nothing;
@@ -166,7 +186,7 @@ export function renderSessionRowBadges(params: {
           "session-row-badge--draft",
         )
       : nothing}
-    ${displayedPlacementState || hasWorkspaceConflict
+    ${hasWorkspaceConflict
       ? renderSessionRowBadge(
           cloudLabel,
           icons.globe,

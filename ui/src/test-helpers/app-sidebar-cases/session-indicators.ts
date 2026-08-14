@@ -11,7 +11,7 @@ function expectNoLead(row: Element | null) {
 }
 
 describe("AppSidebar session indicators", () => {
-  it("preserves child PR indicators and leads a pinned child like any other", async () => {
+  it("preserves child PR indicators and gives a pinned child no extra state", async () => {
     const parentKey = "agent:main:parent";
     const pinnedKey = "agent:main:pinned-child";
     const runningKey = "agent:main:running-child";
@@ -108,19 +108,18 @@ describe("AppSidebar session indicators", () => {
         ),
       ).not.toBeNull();
     });
-    // Pinning is not a status: a pinned child must lead exactly like an
-    // unpinned child in the same run/unread state.
+    // Pinning is not a status: a pinned child in the same run/unread state has
+    // to produce byte-identical trailing state to an unpinned one.
     const pinnedRow = sidebar.querySelector(`[data-session-key="${pinnedKey}"]`);
     const runningRow = sidebar.querySelector(`[data-session-key="${runningKey}"]`);
-    const pinnedLead = pinnedRow?.querySelector(".sidebar-session-indicator");
-    const runningLead = runningRow?.querySelector(".sidebar-session-indicator");
-    expect(pinnedLead).not.toBeNull();
-    expect(pinnedLead?.innerHTML).toBe(runningLead?.innerHTML);
-    expect(pinnedLead?.querySelector("[data-session-pr-state]")).toBeNull();
-    expect(pinnedRow?.querySelector(".session-row-state")).toBeNull();
+    expectNoLead(pinnedRow);
+    expectNoLead(runningRow);
+    const endcapShape = (row: Element | null | undefined) =>
+      row?.querySelector(".session-row-aside")?.innerHTML.replace(/ id="[^"]*"/g, "");
+    expect(endcapShape(pinnedRow)).toBe(endcapShape(runningRow));
   });
 
-  it("trails transient activity while keeping persistent status leading", async () => {
+  it("reports every session's operational state through the trailing endcap", async () => {
     const keys = {
       plain: "agent:main:plain",
       forked: "agent:main:forked",
@@ -199,20 +198,16 @@ describe("AppSidebar session indicators", () => {
     expectNoLead(plain);
     expect(plain?.querySelector(".session-row-state")).toBeNull();
 
+    // A fork is provenance, not operational state, so it earns no row glyph.
     const forked = sidebar.querySelector(`[data-session-key="${keys.forked}"]`);
     expectNoLead(forked);
-    expect(
-      forked?.querySelector(".session-row-aside > .session-row-state .session-row-fork-indicator"),
-    ).not.toBeNull();
-    expect(forked?.querySelector(".session-row-fork-indicator")?.getAttribute("aria-label")).toBe(
-      "Forked session",
-    );
-    expect(forked?.querySelector(".session-row-fork-indicator")?.hasAttribute("title")).toBe(false);
+    expect(forked?.querySelector(".session-row-fork-indicator")).toBeNull();
+    expect(forked?.querySelector(".session-row-state")).toBeNull();
 
     const unread = sidebar.querySelector(`[data-session-key="${keys.unread}"]`);
     expectNoLead(unread);
     expect(
-      unread?.querySelector(".session-row-aside > .session-row-state .session-unread-dot"),
+      unread?.querySelector(".session-row-aside > .session-row-state .session-state-dot--unread"),
     ).not.toBeNull();
 
     const runningUnread = sidebar.querySelector(`[data-session-key="${keys.runningUnread}"]`);
@@ -221,28 +216,27 @@ describe("AppSidebar session indicators", () => {
     expect(
       runningUnread?.querySelector(".session-row-aside > .session-row-state .session-run-spinner"),
     ).not.toBeNull();
-    expect(
-      runningUnread?.querySelector(".session-row-aside > .session-row-state .session-unread-dot"),
-    ).not.toBeNull();
+    expect(runningUnread?.querySelector(".session-state-dot--unread")).toBeNull();
 
-    for (const key of [keys.forked, keys.unread, keys.runningUnread]) {
+    for (const key of [keys.unread, keys.runningUnread]) {
       const link = sidebar.querySelector(`[data-session-key="${key}"] a`);
       const descriptionId = link?.getAttribute("aria-describedby");
       expect(descriptionId).toBe(`sidebar-session-state-${encodeURIComponent(key)}`);
       expect(sidebar.querySelector(`[id="${descriptionId}"]`)).not.toBeNull();
     }
-    expect(forked?.querySelector("a")?.getAttribute("title")).toContain("Forked session");
+    expect(forked?.querySelector("a")?.getAttribute("aria-describedby")).toBeNull();
     expect(unread?.querySelector("a")?.getAttribute("title")).toContain("Unread");
     expect(runningUnread?.querySelector("a")?.getAttribute("title")).toContain("Active run");
-    expect(runningUnread?.querySelector("a")?.getAttribute("title")).toContain("Unread");
+    // A live run supersedes unread, in the title as well as in the endcap.
+    expect(runningUnread?.querySelector("a")?.getAttribute("title")).not.toContain("Unread");
     expect(runningUnread?.querySelector(".session-row-state")?.getAttribute("aria-label")).toBe(
-      "Active run · Unread",
+      "Active run",
     );
 
     for (const key of [keys.openPullRequest, keys.mergedPullRequest]) {
       const row = sidebar.querySelector(`[data-session-key="${key}"]`);
       expectNoLead(row);
-      expect(row?.querySelector(".session-row-state [data-session-pr-state]")).not.toBeNull();
+      expect(row?.querySelector(".session-row-aside [data-session-pr-state]")).not.toBeNull();
       expect(row?.querySelector("a")?.getAttribute("title")).toContain(
         key === keys.openPullRequest ? "Open PR" : "Merged",
       );

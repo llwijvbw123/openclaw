@@ -2007,8 +2007,7 @@ body.update-dialog-open .sidebar-update-card__status {
   text-decoration: none;
 }
 
-.sidebar-recent-session__link
-  > :not(.sidebar-session-indicator):not(.sidebar-recent-session__text) {
+.sidebar-recent-session__link > :not(.sidebar-recent-session__text) {
   margin-left: 8px;
 }
 
@@ -2213,6 +2212,44 @@ body.update-dialog-open .sidebar-update-card__status {
   background: color-mix(in srgb, var(--text) 8%, transparent);
 }
 
+/* Origin metadata and the title share one line so an absent creator or
+   qualifier costs no width at all; the name keeps its own clipping box. */
+.sidebar-recent-session__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.session-row-origin {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.session-row-origin__qualifier {
+  display: inline-flex;
+  color: var(--muted);
+}
+
+.session-row-origin__qualifier svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.session-row-origin__draft {
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .sidebar-recent-session__name {
   flex: 1 1 auto;
   min-width: 0;
@@ -2233,43 +2270,12 @@ body.update-dialog-open .sidebar-update-card__status {
   padding-bottom: 3px;
 }
 
-.sidebar-recent-session--child
-  .sidebar-recent-session__link
-  > :not(.sidebar-session-indicator):not(.sidebar-recent-session__text) {
+.sidebar-recent-session--child .sidebar-recent-session__link > :not(.sidebar-recent-session__text) {
   margin-left: 6px;
 }
 
 .sidebar-recent-session--child .sidebar-recent-session__name {
   font-size: var(--control-ui-text-sm);
-}
-
-.sidebar-recent-session--child .session-row-trail {
-  font-size: calc(10px * var(--control-ui-text-scale));
-}
-
-.sidebar-child-session__status {
-  display: inline-flex;
-  flex: 0 0 auto;
-  color: var(--muted);
-}
-
-.sidebar-child-session__status--done {
-  color: var(--ok);
-}
-
-.sidebar-child-session__status--failed,
-.sidebar-child-session__status--timeout {
-  color: var(--danger);
-}
-
-.sidebar-child-session__status svg {
-  width: 12px;
-  height: 12px;
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1.8px;
 }
 
 .sidebar-recent-session--active .sidebar-recent-session__name {
@@ -3838,27 +3844,6 @@ html:not(.openclaw-native-macos):not(.openclaw-native-nav):not(.openclaw-native-
 }
 
 /* Sidebar sessions redesign: work-session subtitles, agent sections, draft row. */
-.sidebar-session-indicator {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  /* Falls back outside the sidebar, where the shared row primitives are reused
-     by the chat session picker and no sidebar rail token is in scope. */
-  width: var(--sidebar-lead, 16px);
-  height: 16px;
-  flex: 0 0 var(--sidebar-lead, 16px);
-}
-
-.sidebar-session-indicator > .session-row-draft-indicator:not(:only-child) {
-  position: absolute;
-  right: 0;
-  bottom: -1px;
-  width: 9px;
-  height: 9px;
-  font-size: 6px;
-}
-
 .sidebar-session-pr-indicator--open {
   color: var(--ok);
 }
