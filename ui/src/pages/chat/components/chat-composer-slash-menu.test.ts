@@ -26,7 +26,7 @@ type Harness = {
   activeOption: () => HTMLElement | null;
 };
 
-function createHarness(): Harness {
+function createHarness(options: { deferDraftPropagation?: boolean } = {}): Harness {
   const container = document.createElement("div");
   document.body.append(container);
   const sent: string[] = [];
@@ -40,10 +40,21 @@ function createHarness(): Harness {
     },
     getDraft: () => draft,
     onDraftChange: (next: string) => {
+      // The real draft is render-coupled: a same-tick send can read it before
+      // the new value has propagated. This models that boundary.
+      if (options.deferDraftPropagation) {
+        queueMicrotask(() => {
+          draft = next;
+        });
+        return;
+      }
       draft = next;
     },
-    onSend: () => {
-      sent.push(draft);
+    // Mirrors the host send owner: an explicit text wins, otherwise the draft is
+    // read at send time. Recording what the send route actually receives is what
+    // makes an empty dispatch visible here rather than only in a browser run.
+    onSend: (text?: string) => {
+      sent.push(text ?? draft);
     },
   } as unknown as ChatComposerProps;
 
@@ -163,6 +174,18 @@ describe("slash command argument staging", () => {
     typeValue(harness, "24h");
     pressKey(harness, "Enter");
 
+    expect(harness.sent).toEqual(["/session idle 24h"]);
+  });
+
+  it("sends the assembled text even when draft propagation lags the send", () => {
+    const harness = createHarness({ deferDraftPropagation: true });
+    openCommand(harness, requireCommand("session"));
+    pressKey(harness, "Enter");
+    typeValue(harness, "24h");
+    pressKey(harness, "Enter");
+
+    // Writing the command to the draft and then calling a bare send dispatched
+    // an empty message here, because the send read the draft in the same tick.
     expect(harness.sent).toEqual(["/session idle 24h"]);
   });
 

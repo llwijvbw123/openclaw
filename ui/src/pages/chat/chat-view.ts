@@ -217,7 +217,8 @@ export type ChatProps = ChatTaskSuggestionTrayProps &
     onRequestUpdate?: () => void;
     onHistoryKeydown?: (input: ChatInputHistoryKeyInput) => ChatInputHistoryKeyResult;
     onSlashIntent?: () => void | Promise<void>;
-    onSend: () => void;
+    /** Sends `text` when supplied, otherwise the current draft. */
+    onSend: (text?: string) => void;
     onCompact?: () => void | Promise<void>;
     onOpenSessionCheckpoints?: () => void | Promise<void>;
     onToggleRealtimeTalk?: () => void;
