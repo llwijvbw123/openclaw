@@ -1,7 +1,9 @@
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import {
   createAgentRunRestartAbortError,
+  createAgentRunSupersededAbortError,
   isAgentRunRestartAbortReason,
+  isAgentRunSupersededAbortReason,
 } from "../../agents/run-termination.js";
 import { createAbortError } from "../../infra/abort-signal.js";
 import { getAgentEventLifecycleGeneration } from "../../infra/agent-events.js";
@@ -46,7 +48,10 @@ import {
 } from "./reply-run-registry.state.js";
 
 type ReplyBackendCancelReason = "user_abort" | "restart" | "superseded";
-type ReplyOperationAbortCode = "aborted_by_user" | "aborted_for_restart";
+type ReplyOperationAbortCode =
+  | "aborted_by_user"
+  | "aborted_for_restart"
+  | "aborted_for_supersession";
 type ReplyOperationResult = NonNullable<ReplyOperation["result"]>;
 type ReplyOperationStaleReason = replyRunSettle.ReplyOperationStaleReason;
 
@@ -429,7 +434,9 @@ export function createReplyOperation(params: {
           result.kind === "aborted"
             ? result.code === "aborted_for_restart"
               ? "restart"
-              : "user_abort"
+              : result.code === "aborted_for_supersession"
+                ? "superseded"
+                : "user_abort"
             : "superseded",
         );
         return;
@@ -520,6 +527,17 @@ export function createReplyOperation(params: {
         return false;
       }
       abortOperation("restart", createAgentRunRestartAbortError(), "aborted_for_restart");
+      return true;
+    },
+    abortForSupersession() {
+      if (!isReplyOperationAbortable(operation)) {
+        return false;
+      }
+      abortOperation(
+        "superseded",
+        createAgentRunSupersededAbortError(),
+        "aborted_for_supersession",
+      );
       return true;
     },
   };
@@ -665,10 +683,15 @@ export function createReplyOperation(params: {
         return;
       }
       const restart = isAgentRunRestartAbortReason(upstreamAbortSignal.reason);
+      const superseded = isAgentRunSupersededAbortReason(upstreamAbortSignal.reason);
       abortOperation(
-        restart ? "restart" : "user_abort",
+        restart ? "restart" : superseded ? "superseded" : "user_abort",
         upstreamAbortSignal.reason,
-        restart ? "aborted_for_restart" : "aborted_by_user",
+        restart
+          ? "aborted_for_restart"
+          : superseded
+            ? "aborted_for_supersession"
+            : "aborted_by_user",
       );
     };
     if (upstreamAbortSignal.aborted) {
