@@ -124,12 +124,7 @@ export type ChatComposerProps = {
   onRequestUpdate?: () => void;
   onHistoryKeydown?: (input: ChatInputHistoryKeyInput) => ChatInputHistoryKeyResult;
   onSlashIntent?: () => void | Promise<void>;
-  /**
-   * Sends `text` when supplied, otherwise the current draft. Command surfaces
-   * that already know the exact text pass it so the send never depends on a
-   * draft mutation propagating back before it reads.
-   */
-  onSend: (text?: string) => void;
+  onSend: () => void;
   onCompact?: () => void | Promise<void>;
   onToggleRealtimeTalk?: () => void;
   onToggleRealtimeCamera?: () => void;

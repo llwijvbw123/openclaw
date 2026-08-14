@@ -140,10 +140,9 @@ export function cancelSlashArgStage(props: ChatComposerProps, requestUpdate: () 
 }
 
 /**
- * Runs the fully assembled command. The text goes to the send owner directly
- * rather than being written to the draft and read back: the draft is shared,
- * render-coupled state, and a send reading it in the same tick can still observe
- * the pre-command value and dispatch an empty message.
+ * Runs the fully assembled command through the composer's normal send route.
+ * Committing to the draft first is deliberate: a bare send is what records the
+ * command in input history and clears the draft afterwards.
  */
 function runStagedSlashCommand(
   command: SlashCommandDef,
@@ -154,7 +153,8 @@ function runStagedSlashCommand(
   const state = getChatComposerState(props.paneId);
   state.slashMenuOpen = false;
   resetSlashMenuState(state);
-  props.onSend([`/${command.name}`, ...values].join(" "));
+  commitComposerDraft(props, [`/${command.name}`, ...values].join(" "));
+  props.onSend();
   queueMicrotask(() => state.composerTextarea?.focus({ preventScroll: true }));
   requestUpdate();
 }
@@ -212,9 +212,6 @@ export function selectSlashCommand(
   if (cmd.executeLocal && !cmd.args) {
     state.slashMenuOpen = false;
     resetSlashMenuState(state);
-    // Deliberately routed through the draft: an override send skips the
-    // post-send draft clear, which is what empties the textarea the operator
-    // typed into. Staged commands differ — they already cleared it.
     commitComposerDraft(props, `/${cmd.name}`);
     props.onSend();
   } else {

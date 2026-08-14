@@ -525,17 +525,12 @@ export class ChatPane extends ChatPaneBrowserAnnotationRender {
         state.requestUpdate?.();
       },
       onRemoveAttachment: this.removeBrowserAnnotation,
-      // Explicit text always reaches the send owner: the catalog and suggestion
-      // panes reinterpret a bare send, which would silently swallow a command
-      // the operator already finished assembling.
-      onSend: (text?: string) =>
-        text != null
-          ? void state.handleSendChat(text)
-          : catalogKey
-            ? void this.continueCatalogSession(catalogKey)
-            : suggestionViewer
-              ? void this.addCurrentSessionSuggestion()
-              : void state.handleSendChat(),
+      onSend: () =>
+        catalogKey
+          ? void this.continueCatalogSession(catalogKey)
+          : suggestionViewer
+            ? void this.addCurrentSessionSuggestion()
+            : void state.handleSendChat(),
       onCompact: sessionActionCallbacks.onCompact,
       onOpenSessionCheckpoints: () => {
         const search = new URLSearchParams({ session: state.sessionKey });

@@ -139,10 +139,12 @@ suite.define(() => {
         await gateway.waitForRequest("chat.send");
         // Assert the whole dispatch set rather than only the first request: a
         // staged command must produce exactly one send carrying the assembled
-        // text, so both a lost payload and a stray extra send show up here.
+        // command, so both a lost payload and a stray extra send show up here.
+        // The payload field is `message`; asserting a field the request does not
+        // carry silently reads as empty and fakes a product bug.
         expect(await gateway.getRequests("chat.send")).toEqual([
           expect.objectContaining({
-            params: expect.objectContaining({ text: "/deploy scale 3" }),
+            params: expect.objectContaining({ message: "/deploy scale 3" }),
           }),
         ]);
         await expect.poll(() => page.locator(".slash-arg-stage").count()).toBe(0);
