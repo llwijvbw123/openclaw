@@ -122,14 +122,13 @@ describe("web monitor inbox", () => {
         }),
       ),
     );
-    await vi.waitFor(() => expectPairingPromptSent(sock, "999@s.whatsapp.net", "+999"));
+    await listener.close();
 
+    expectPairingPromptSent(sock, "999@s.whatsapp.net", "+999");
     // Should NOT call onMessage for unauthorized senders
     expect(onMessage).not.toHaveBeenCalled();
     // Should NOT send read receipts for blocked senders (privacy + avoids Baileys Bad MAC churn).
     expect(sock.readMessages).not.toHaveBeenCalled();
-
-    await listener.close();
   });
 
   it("delivery coordinator applies hot-reloaded dmPolicy to the active listener", async () => {
