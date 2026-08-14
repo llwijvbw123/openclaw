@@ -2,9 +2,11 @@
 // only part of the invite that the startup graph pays for: an operator who already
 // answered the card is terminal here, so the lazy runtime chunk is never fetched
 // again. Every arming rule and the card itself live behind that boundary.
+
 import { createIdleImport } from "../lib/idle-import.ts";
+import type { SessionCapability } from "../lib/sessions/session-capability.ts";
 import { getSafeLocalStorage } from "../local-storage.ts";
-import type { ApplicationContext } from "./context.ts";
+import type { ApplicationGateway } from "./gateway.ts";
 
 const COMMUNITY_INVITE_KEY = "openclaw:control-ui:community-invite:v1";
 
@@ -20,12 +22,22 @@ export type CommunityInviteRecord = {
   established: boolean;
   /** Set once the card was answered. Terminal: the nudge never returns. */
   settledAtMs?: number;
-  settledVersion?: string;
+  /** Build the card appeared in; null when the artifact ships without identity. */
+  settledVersion?: string | null;
   outcome?: CommunityInviteOutcome;
 };
 
+/** Only the two capabilities the arming rules read. Naming the whole
+ * ApplicationContext here would drag in its route-id type parameter, which is
+ * invariant and has nothing to do with this decision. */
+type CommunityInviteContext = {
+  readonly gateway: Pick<ApplicationGateway, "snapshot" | "subscribe">;
+  readonly sessions: Pick<SessionCapability, "state" | "subscribe">;
+};
+
 export type CommunityInviteHost = {
-  readonly context: ApplicationContext | null;
+  /** The shell publishes its context on first render, so this is absent early. */
+  readonly context?: CommunityInviteContext | null;
   readonly onboardingMode: boolean;
 };
 
