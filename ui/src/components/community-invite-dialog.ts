@@ -1,17 +1,21 @@
-// Community invite card. Shadow DOM keeps its art-directed dark styling out of the
-// global stylesheets and out of the startup CSS budget; the surrounding modal comes
-// from the canonical dialog adapter so focus, Esc and the backdrop stay native.
+// Community invite card. A non-modal floater in the trailing bottom corner: it
+// never dims the app, never traps focus and never takes focus, so it cannot
+// interrupt whatever the operator is doing. Shadow DOM keeps its art-directed
+// dark styling out of the global stylesheets and off the startup CSS budget.
 import { css, html, svg } from "lit";
 import { inferControlUiPublicAssetPath } from "../app/public-assets.ts";
 import { t } from "../i18n/index.ts";
-import { EXTERNAL_LINK_TARGET, buildExternalLinkRel } from "../lib/external-link.ts";
+import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../lib/external-link.ts";
 import { OpenClawLitElement } from "../lit/openclaw-element.ts";
 import { strokeIcon } from "./icons-tools.ts";
 import { icons } from "./icons.ts";
-import "./modal-dialog.ts";
 
 export const COMMUNITY_INVITE_URL = "https://discord.gg/clawd";
 export const COMMUNITY_INVITE_SETTLED_EVENT = "community-invite-settled";
+/** Published on :root so `.app-toast` can stack above the card instead of over it. */
+const TOAST_RESERVE_PROPERTY = "--oc-community-invite-reserve-bottom";
+/** Gap between the card and a toast sitting on top of it. */
+const TOAST_RESERVE_GAP_PX = 10;
 
 // Solid brand mark: the shared lucide set is stroked, so this one carries its own fill.
 const discordMark = html`
@@ -27,12 +31,32 @@ const arrowUpRight = strokeIcon(svg` <path d="M7 17 17 7" />
 
 export class OpenClawCommunityInviteDialog extends OpenClawLitElement {
   static override styles = css`
+    /* Mirrors .app-toast's corner anchor (styles/components.css) so the two
+       floaters share one trailing-corner idiom instead of inventing a second. */
     :host {
-      display: contents;
+      position: fixed;
+      right: calc(20px + var(--safe-area-right, 0px));
+      bottom: calc(20px + var(--safe-area-bottom, 0px));
+      z-index: var(--z-floater, 1900);
+      width: min(340px, calc(100vw - 32px));
+      animation: invite-enter 180ms ease-out both;
     }
 
-    openclaw-modal-dialog {
-      --openclaw-modal-width: 380px;
+    /* Same phone idiom as .app-toast: a corner card degenerates at these widths. */
+    @media (max-width: 768px),
+      (max-width: 932px) and (max-height: 500px) and (orientation: landscape) {
+      :host {
+        left: max(12px, var(--safe-area-left, 0px));
+        right: max(12px, var(--safe-area-right, 0px));
+        width: auto;
+      }
+    }
+
+    @keyframes invite-enter {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
     }
 
     .invite {
@@ -40,17 +64,17 @@ export class OpenClawCommunityInviteDialog extends OpenClawLitElement {
       flex-direction: column;
       overflow: hidden;
       border: 1px solid rgb(255 255 255 / 12%);
-      border-radius: 16px;
-      /* The card is art-directed dark in both app themes: it frames a dark photo,
-         and a light variant would wash the header seam out. */
+      border-radius: 14px;
+      /* Art-directed dark in both app themes: it frames a dark photo, and a light
+         variant would wash the header seam out. */
       background: #10131c;
       color: #f3f5fb;
-      box-shadow: 0 24px 60px rgb(0 0 0 / 45%);
+      box-shadow: 0 18px 44px rgb(0 0 0 / 40%);
     }
 
     .invite__header {
       position: relative;
-      height: 148px;
+      height: 132px;
       flex: none;
     }
 
@@ -58,7 +82,7 @@ export class OpenClawCommunityInviteDialog extends OpenClawLitElement {
       display: block;
       width: 100%;
       height: 100%;
-      /* Calibrated against the 148px header: air above the antennae, the pedestal
+      /* Calibrated against the header height: air above the antennae, the pedestal
          base grounded in the fade, both subjects centred. Changing the header
          height means re-checking this crop. */
       object-fit: cover;
@@ -68,55 +92,73 @@ export class OpenClawCommunityInviteDialog extends OpenClawLitElement {
     .invite__fade {
       position: absolute;
       inset: auto 0 -1px 0;
-      height: 72px;
+      height: 64px;
       background: linear-gradient(to bottom, rgb(16 19 28 / 0%), #10131c);
+      pointer-events: none;
+    }
+
+    /* Minimal local scrim so the ghost X keeps contrast over any part of the
+       photo without wearing a ring or a filled chip. */
+    .invite__header::after {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto auto;
+      width: 92px;
+      height: 68px;
+      background: radial-gradient(ellipse at top right, rgb(0 0 0 / 42%), rgb(0 0 0 / 0%) 72%);
       pointer-events: none;
     }
 
     .invite__close {
       position: absolute;
-      inset: 8px 8px auto auto;
+      inset: 6px 6px auto auto;
       display: grid;
-      width: 30px;
-      height: 30px;
+      width: 26px;
+      height: 26px;
       place-items: center;
       padding: 0;
       border: 0;
-      border-radius: 999px;
-      background: rgb(0 0 0 / 35%);
-      color: rgb(255 255 255 / 85%);
-      cursor: pointer;
+      border-radius: var(--radius-sm, 6px);
+      background: transparent;
+      color: rgb(255 255 255 / 76%);
+      cursor: var(--cursor-action, pointer);
       transition:
         background 120ms ease,
         color 120ms ease;
     }
 
     .invite__close:hover {
-      background: rgb(0 0 0 / 55%);
+      background: rgb(255 255 255 / 14%);
       color: #fff;
     }
 
     .invite__close:focus-visible {
-      outline: 2px solid #fff;
-      outline-offset: 2px;
+      outline: 2px solid rgb(255 255 255 / 70%);
+      outline-offset: 1px;
     }
 
     .invite__close svg {
-      width: 16px;
-      height: 16px;
+      display: block;
+      width: 15px;
+      height: 15px;
+      fill: none;
+      stroke: currentcolor;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
     }
 
     .invite__body {
       display: flex;
       flex-direction: column;
-      gap: 6px;
-      padding: 4px 20px 20px;
+      gap: 5px;
+      padding: 2px 16px 16px;
     }
 
     .invite__eyebrow {
       margin: 0;
       color: #a5b4ff;
-      font-size: 11px;
+      font-size: 10.5px;
       font-weight: 700;
       letter-spacing: 0.12em;
       text-transform: uppercase;
@@ -124,7 +166,7 @@ export class OpenClawCommunityInviteDialog extends OpenClawLitElement {
 
     .invite__title {
       margin: 0;
-      font-size: 22px;
+      font-size: 19px;
       font-weight: 700;
       line-height: 1.2;
       letter-spacing: -0.01em;
@@ -132,8 +174,8 @@ export class OpenClawCommunityInviteDialog extends OpenClawLitElement {
 
     .invite__text {
       margin: 0;
-      color: rgb(243 245 251 / 72%);
-      font-size: 13.5px;
+      color: rgb(243 245 251 / 70%);
+      font-size: 13px;
       line-height: 1.45;
     }
 
@@ -142,12 +184,12 @@ export class OpenClawCommunityInviteDialog extends OpenClawLitElement {
       align-items: center;
       justify-content: center;
       gap: 8px;
-      margin-top: 14px;
-      padding: 11px 16px;
-      border-radius: 10px;
+      margin-top: 12px;
+      padding: 10px 14px;
+      border-radius: 9px;
       background: #fff;
       color: #10131c;
-      font-size: 14px;
+      font-size: 13.5px;
       font-weight: 600;
       text-decoration: none;
       transition:
@@ -169,8 +211,8 @@ export class OpenClawCommunityInviteDialog extends OpenClawLitElement {
     }
 
     .invite__cta svg {
-      width: 18px;
-      height: 18px;
+      width: 17px;
+      height: 17px;
       flex: none;
     }
 
@@ -178,80 +220,115 @@ export class OpenClawCommunityInviteDialog extends OpenClawLitElement {
        whether or not the trailing affordance is visible. */
     .invite__cta-trailing {
       display: grid;
-      width: 18px;
-      height: 18px;
+      width: 17px;
+      height: 17px;
       place-items: center;
       opacity: 0;
       transition: opacity 120ms ease;
     }
 
     .invite__cta-trailing svg {
-      width: 14px;
-      height: 14px;
+      width: 13px;
+      height: 13px;
     }
 
     .invite__cta:hover .invite__cta-trailing,
     .invite__cta:focus-visible .invite__cta-trailing {
-      opacity: 0.55;
+      opacity: 0.5;
     }
 
     @media (prefers-reduced-motion: reduce) {
+      :host,
       .invite__close,
       .invite__cta,
       .invite__cta-trailing {
+        animation: none;
         transition: none;
       }
     }
   `;
 
+  private settled = false;
+  private resizeObserver: ResizeObserver | null = null;
+
+  override connectedCallback() {
+    super.connectedCallback();
+    // Publish our height so .app-toast can sit above the card. Toasts are
+    // transient and higher priority, so they stack on top; the card owns the
+    // corner and yields the space.
+    this.resizeObserver = new ResizeObserver(() => this.publishToastReserve());
+    this.resizeObserver.observe(this);
+  }
+
+  override disconnectedCallback() {
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
+    document.documentElement.style.removeProperty(TOAST_RESERVE_PROPERTY);
+    super.disconnectedCallback();
+  }
+
+  private publishToastReserve() {
+    const height = Math.ceil(this.getBoundingClientRect().height);
+    document.documentElement.style.setProperty(
+      TOAST_RESERVE_PROPERTY,
+      height > 0 ? `${height + TOAST_RESERVE_GAP_PX}px` : "0px",
+    );
+  }
+
   override render() {
     return html`
-      <openclaw-modal-dialog
-        .label=${t("communityInvite.dialogLabel")}
-        @modal-cancel=${() => this.settle("dismissed")}
+      <aside
+        class="invite"
+        role="complementary"
+        aria-label=${t("communityInvite.dialogLabel")}
+        @keydown=${this.handleKeydown}
       >
-        <div class="invite">
-          <div class="invite__header">
-            <img
-              class="invite__art"
-              src=${inferControlUiPublicAssetPath("community-art/discord-invite.webp")}
-              alt=${t("communityInvite.artAlt")}
-              width="1024"
-              height="538"
-            />
-            <div class="invite__fade"></div>
-            <button
-              class="invite__close"
-              type="button"
-              autofocus
-              aria-label=${t("common.close")}
-              @click=${() => this.settle("dismissed")}
-            >
-              ${icons.x}
-            </button>
-          </div>
-          <div class="invite__body">
-            <p class="invite__eyebrow">${t("communityInvite.eyebrow")}</p>
-            <h2 class="invite__title">${t("communityInvite.title")}</h2>
-            <p class="invite__text">${t("communityInvite.body")}</p>
-            <a
-              class="invite__cta"
-              href=${COMMUNITY_INVITE_URL}
-              target=${EXTERNAL_LINK_TARGET}
-              rel=${buildExternalLinkRel()}
-              @click=${() => this.settle("joined")}
-            >
-              ${discordMark}
-              <span>${t("communityInvite.action")}</span>
-              <span class="invite__cta-trailing" aria-hidden="true">${arrowUpRight}</span>
-            </a>
-          </div>
+        <div class="invite__header">
+          <img
+            class="invite__art"
+            src=${inferControlUiPublicAssetPath("community-art/discord-invite.webp")}
+            alt=${t("communityInvite.artAlt")}
+            width="1024"
+            height="538"
+          />
+          <div class="invite__fade"></div>
+          <button
+            class="invite__close"
+            type="button"
+            aria-label=${t("common.dismiss")}
+            @click=${() => this.settle("dismissed")}
+          >
+            ${icons.x}
+          </button>
         </div>
-      </openclaw-modal-dialog>
+        <div class="invite__body">
+          <p class="invite__eyebrow">${t("communityInvite.eyebrow")}</p>
+          <h2 class="invite__title">${t("communityInvite.title")}</h2>
+          <p class="invite__text">${t("communityInvite.body")}</p>
+          <a
+            class="invite__cta"
+            href=${COMMUNITY_INVITE_URL}
+            target=${EXTERNAL_LINK_TARGET}
+            rel=${buildExternalLinkRel()}
+            @click=${() => this.settle("joined")}
+          >
+            ${discordMark}
+            <span>${t("communityInvite.action")}</span>
+            <span class="invite__cta-trailing" aria-hidden="true">${arrowUpRight}</span>
+          </a>
+        </div>
+      </aside>
     `;
   }
 
-  private settled = false;
+  /** Esc dismisses only while focus is inside the card; a non-modal floater must
+   * not swallow Escape from the rest of the app. */
+  private handleKeydown = (event: KeyboardEvent) => {
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      this.settle("dismissed");
+    }
+  };
 
   /** Both exits are terminal, so the owner records one outcome and drops the card. */
   private settle(outcome: "joined" | "dismissed") {

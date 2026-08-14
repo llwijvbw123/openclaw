@@ -372,8 +372,8 @@ export const en: TranslationMap = {
     artAlt: "A lobster beside the Discord mark on a lit seafloor pedestal",
     eyebrow: "OpenClaw community",
     title: "Come build with us",
-    body: "Get help, share what you're making, and meet other OpenClaw builders.",
-    action: "Join the Discord",
+    body: "Ask questions, report bugs, and show other builders what you're making.",
+    action: "Join us on Discord",
   },
   updates: {
     adminRequired: "Administrator access is required to change update settings or start an update.",
