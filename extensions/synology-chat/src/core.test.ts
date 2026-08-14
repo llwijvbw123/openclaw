@@ -7,7 +7,7 @@ import {
   runSetupWizardConfigure,
 } from "openclaw/plugin-sdk/plugin-test-runtime";
 import type { WizardPrompter } from "openclaw/plugin-sdk/plugin-test-runtime";
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { listAccountIds, resolveAccount } from "./accounts.js";
 import { SynologyChatChannelConfigSchema } from "./config-schema.js";
 import {
@@ -32,7 +32,24 @@ const synologyChatSetupPlugin = {
 };
 
 const synologyChatConfigure = createPluginSetupWizardConfigure(synologyChatSetupPlugin);
-const originalEnv = { ...process.env };
+const synologyTestEnvKeys = [
+  "SYNOLOGY_CHAT_TOKEN",
+  "SYNOLOGY_CHAT_INCOMING_URL",
+  "SYNOLOGY_NAS_HOST",
+  "SYNOLOGY_ALLOWED_USER_IDS",
+  "SYNOLOGY_RATE_LIMIT",
+  "OPENCLAW_BOT_NAME",
+] as const;
+
+function clearSynologyTestEnv(): void {
+  vi.unstubAllEnvs();
+  for (const key of synologyTestEnvKeys) {
+    delete process.env[key];
+  }
+}
+
+beforeEach(clearSynologyTestEnv);
+afterEach(clearSynologyTestEnv);
 
 function createSynologySetupPrompter(params: { allowedUserIds?: string } = {}) {
   return createTestWizardPrompter({
@@ -75,22 +92,6 @@ async function expectDmAuthorization(params: {
 }
 
 describe("synology-chat core", () => {
-  afterAll(() => {
-    vi.unstubAllEnvs();
-    process.env = { ...originalEnv };
-  });
-
-  beforeEach(() => {
-    vi.unstubAllEnvs();
-    process.env = { ...originalEnv };
-    delete process.env.SYNOLOGY_CHAT_TOKEN;
-    delete process.env.SYNOLOGY_CHAT_INCOMING_URL;
-    delete process.env.SYNOLOGY_NAS_HOST;
-    delete process.env.SYNOLOGY_ALLOWED_USER_IDS;
-    delete process.env.SYNOLOGY_RATE_LIMIT;
-    delete process.env.OPENCLAW_BOT_NAME;
-  });
-
   it("exports dangerouslyAllowNameMatching in the JSON schema", () => {
     const properties = (SynologyChatChannelConfigSchema.schema.properties ?? {}) as Record<
       string,
