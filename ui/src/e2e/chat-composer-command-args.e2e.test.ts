@@ -1,6 +1,7 @@
 // Control UI E2E covers staged slash command arguments end to end.
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
+import type { Page } from "playwright";
 import { expect, it } from "vitest";
 import { installMockGateway } from "../test-helpers/control-ui-e2e.ts";
 import { createControlUiE2eSuite } from "./control-ui-e2e-suite.test-support.ts";
@@ -11,45 +12,16 @@ const suite = createControlUiE2eSuite({
 
 const ARTIFACT_DIR = path.resolve(".artifacts/control-ui-e2e/command-args");
 const VIEWPORT = { height: 900, width: 1280 } as const;
+const THEMES = ["light", "dark"] as const;
+
+type Theme = (typeof THEMES)[number];
 
 /**
- * `/deploy` mirrors the composite shape of the built-in `/session`: a choice for
- * the action, then a free-form value the operator has to supply.
+ * No command catalog is published, so the composer keeps the browser-safe
+ * fallback registry. Every command exercised below is therefore a real builtin
+ * with its real declared arguments — including the provider-dependent choice
+ * sets that this PR resolves locally.
  */
-const commands = [
-  {
-    acceptsArgs: true,
-    args: [
-      {
-        choices: [
-          { label: "Restart", value: "restart" },
-          { label: "Scale", value: "scale" },
-        ],
-        description: "Deploy action",
-        name: "action",
-        type: "string",
-      },
-      { description: "Target replica count", name: "value", type: "string" },
-    ],
-    category: "management",
-    description: "Manage a deployment.",
-    name: "deploy",
-    scope: "both",
-    source: "plugin",
-    textAliases: ["/deploy"],
-  },
-  {
-    acceptsArgs: true,
-    args: [{ description: "Note to record", name: "note", required: true, type: "string" }],
-    category: "session",
-    description: "Record a note.",
-    name: "note",
-    scope: "both",
-    source: "plugin",
-    textAliases: ["/note"],
-  },
-];
-
 function startupResponse(sessionId: string) {
   return {
     agentsList: {
@@ -59,132 +31,337 @@ function startupResponse(sessionId: string) {
       scope: "agent" as const,
     },
     messages: [],
-    metadata: { commands, models: [] },
+    metadata: { models: [] },
     sessionId,
     thinkingLevel: null,
   };
 }
 
+type Fixture = {
+  page: Page;
+  gateway: Awaited<ReturnType<typeof installMockGateway>>;
+  composer: ReturnType<Page["locator"]>;
+  menu: ReturnType<Page["locator"]>;
+  stageInput: ReturnType<Page["locator"]>;
+  stagePrefix: ReturnType<Page["locator"]>;
+  shot: (name: string) => Promise<void>;
+  optionLabels: () => Promise<string[]>;
+  sentMessages: () => Promise<unknown[]>;
+};
+
+async function openChat(page: Page, theme: Theme, sessionId: string): Promise<Fixture> {
+  const gateway = await installMockGateway(page, {
+    deferredMethods: ["chat.send"],
+    methodResponses: { "chat.startup": startupResponse(sessionId) },
+  });
+  await page.goto(`${suite.server.baseUrl}chat`);
+  await gateway.waitForRequest("chat.startup");
+  // Proves the forced colour scheme reached the app shell, so a "dark" artifact
+  // can never be a light screenshot wearing a dark filename.
+  await expect.poll(() => page.locator("html").getAttribute("data-theme-mode")).toBe(theme);
+
+  const composer = page.locator(".agent-chat__composer-combobox textarea");
+  await composer.waitFor({ state: "visible" });
+  await expect.poll(() => composer.isEnabled()).toBe(true);
+
+  const menu = page.locator(".slash-menu[role='listbox']");
+  return {
+    page,
+    gateway,
+    composer,
+    menu,
+    stageInput: page.locator(".slash-arg-stage__input"),
+    stagePrefix: page.locator(".slash-arg-stage__prefix"),
+    shot: async (name: string) => {
+      await page.locator(".agent-chat__composer-shell").screenshot({
+        animations: "disabled",
+        path: path.join(ARTIFACT_DIR, `${theme}-${name}.png`),
+      });
+    },
+    optionLabels: () => menu.getByRole("option").locator(".slash-menu-name").allTextContents(),
+    sentMessages: async () =>
+      (await gateway.getRequests("chat.send")).map((request) =>
+        typeof request.params === "object" && request.params !== null && "message" in request.params
+          ? request.params.message
+          : null,
+      ),
+  };
+}
+
+/** Opens the command menu and selects the highlighted entry. */
+async function pickCommand(fixture: Fixture, typed: string): Promise<void> {
+  await fixture.composer.fill(typed);
+  await fixture.menu.waitFor({ state: "visible" });
+}
+
 suite.define(() => {
-  for (const theme of ["light", "dark"] as const) {
-    it(`stages composite command arguments without a chat turn (${theme})`, async () => {
+  for (const theme of THEMES) {
+    it(`class A — argument-free commands run straight from the menu (${theme})`, async () => {
       await mkdir(ARTIFACT_DIR, { recursive: true });
       await suite.withPage({ colorScheme: theme, viewport: VIEWPORT }, async ({ page }) => {
-        const gateway = await installMockGateway(page, {
-          deferredMethods: ["chat.send"],
-          methodResponses: {
-            "chat.startup": startupResponse(`staged-command-args-${theme}`),
-            "commands.list": { commands },
-          },
-        });
+        const f = await openChat(page, theme, `cmdargs-a-${theme}`);
 
-        await page.goto(`${suite.server.baseUrl}chat`);
-        await gateway.waitForRequest("chat.startup");
-        // Proves the forced color scheme actually reached the app shell, so a
-        // "dark" artifact can never be a light screenshot with a dark filename.
-        await expect.poll(() => page.locator("html").getAttribute("data-theme-mode")).toBe(theme);
+        await pickCommand(f, "/help");
+        await expect.poll(() => f.optionLabels()).toContain("/help");
+        await f.shot("a1-menu-filtered");
 
-        const composer = page.locator(".agent-chat__composer-combobox textarea");
-        await composer.waitFor({ state: "visible" });
-        await expect.poll(() => composer.isEnabled()).toBe(true);
+        await f.composer.press("Enter");
+        // No declared arguments: no stage, and the draft is consumed by the send.
+        await expect.poll(() => f.stageInput.count()).toBe(0);
+        await expect.poll(() => f.composer.inputValue()).toBe("");
+        await expect.poll(() => f.menu.count()).toBe(0);
+        await f.shot("a2-executed");
+      });
+    });
 
-        // Phase 1: the command menu.
-        await composer.fill("/deploy");
-        const menu = page.locator(".slash-menu[role='listbox']");
-        await menu.waitFor({ state: "visible" });
-        await page.screenshot({
-          animations: "disabled",
-          path: path.join(ARTIFACT_DIR, `${theme}-1-command-menu.png`),
-        });
+    it(`class B — a single enum stages its choices and dispatches (${theme})`, async () => {
+      await mkdir(ARTIFACT_DIR, { recursive: true });
+      await suite.withPage({ colorScheme: theme, viewport: VIEWPORT }, async ({ page }) => {
+        const f = await openChat(page, theme, `cmdargs-b-${theme}`);
 
-        // Phase 2: the action choices, rendered by label.
-        await composer.press("Enter");
-        const stageInput = page.locator(".slash-arg-stage__input");
-        await stageInput.waitFor({ state: "visible" });
+        await pickCommand(f, "/tools");
+        // The menu advertises how many options sit behind the command.
         await expect
-          .poll(() => menu.getByRole("option").locator(".slash-menu-name").allTextContents())
-          .toEqual(["Restart", "Scale"]);
-        // The chosen command never lands in the message textarea.
-        await expect.poll(() => composer.inputValue()).toBe("");
+          .poll(() => page.locator(".slash-menu-badge").first().textContent())
+          .toContain("2");
+        await f.shot("b1-menu-option-badge");
+
+        await f.composer.press("Enter");
+        await f.stageInput.waitFor({ state: "visible" });
+        await expect.poll(() => f.optionLabels()).toEqual(["compact", "verbose"]);
+        await expect.poll(() => f.composer.inputValue()).toBe("");
+        await f.shot("b2-choices");
+
+        // Arrow navigation moves the highlight; the staged input keeps focus.
+        await f.stageInput.press("ArrowDown");
         await expect
-          .poll(() => stageInput.evaluate((node) => document.activeElement === node))
+          .poll(() => page.locator(".slash-menu-item--active .slash-menu-name").textContent())
+          .toBe("verbose");
+        await expect
+          .poll(() => f.stageInput.evaluate((node) => document.activeElement === node))
           .toBe(true);
-        await page.screenshot({
-          animations: "disabled",
-          path: path.join(ARTIFACT_DIR, `${theme}-2-argument-choices.png`),
-        });
+        await f.shot("b3-arrow-highlight");
 
-        // Phase 3: picking the action chains to the value stage instead of running.
-        await stageInput.press("ArrowDown");
-        await stageInput.press("Enter");
-        await expect
-          .poll(() => page.locator(".slash-arg-stage__prefix").textContent())
-          .toBe("/deploy scale");
-        await expect
-          .poll(() => stageInput.getAttribute("placeholder"))
-          .toBe("Target replica count");
-        expect(await gateway.getRequests("chat.send")).toHaveLength(0);
-        await page.screenshot({
-          animations: "disabled",
-          path: path.join(ARTIFACT_DIR, `${theme}-3-staged-value.png`),
-        });
+        await f.stageInput.press("Enter");
+        await f.gateway.waitForRequest("chat.send");
+        expect(await f.sentMessages()).toEqual(["/tools verbose"]);
+        await expect.poll(() => f.stageInput.count()).toBe(0);
+        await f.shot("b4-dispatched");
+      });
+    });
 
-        // Phase 4: the assembled command runs once the last argument is supplied.
-        await stageInput.fill("3");
-        await page.screenshot({
-          animations: "disabled",
-          path: path.join(ARTIFACT_DIR, `${theme}-4-value-entered.png`),
-        });
-        await stageInput.press("Enter");
-        await gateway.waitForRequest("chat.send");
-        // Assert the whole dispatch set rather than only the first request: a
-        // staged command must produce exactly one send carrying the assembled
-        // command, so both a lost payload and a stray extra send show up here.
-        // The payload field is `message`; asserting a field the request does not
-        // carry silently reads as empty and fakes a product bug.
-        expect(await gateway.getRequests("chat.send")).toEqual([
-          expect.objectContaining({
-            params: expect.objectContaining({ message: "/deploy scale 3" }),
-          }),
-        ]);
-        await expect.poll(() => page.locator(".slash-arg-stage").count()).toBe(0);
+    it(`class B-dyn — /think and /fast resolve their real option sets (${theme})`, async () => {
+      await mkdir(ARTIFACT_DIR, { recursive: true });
+      await suite.withPage({ colorScheme: theme, viewport: VIEWPORT }, async ({ page }) => {
+        const f = await openChat(page, theme, `cmdargs-bdyn-${theme}`);
+
+        await pickCommand(f, "/think");
+        await f.composer.press("Enter");
+        await f.stageInput.waitFor({ state: "visible" });
+        // Previously this argument advertised nothing at all: the provider
+        // dependent set was dropped and only a bare [level] hint remained.
+        await expect
+          .poll(() => f.optionLabels())
+          .toEqual([
+            "default",
+            "off",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "adaptive",
+            "max",
+          ]);
+        await f.shot("bdyn1-think-levels");
+
+        // Filtering narrows the resolved set rather than the command list.
+        await f.stageInput.fill("hi");
+        await expect.poll(() => f.optionLabels()).toEqual(["high", "xhigh"]);
+        await f.shot("bdyn2-think-filtered");
+
+        await f.stageInput.press("Escape");
+        await expect.poll(() => f.stageInput.count()).toBe(0);
+
+        await pickCommand(f, "/fast");
+        await f.composer.press("Enter");
+        await f.stageInput.waitFor({ state: "visible" });
+        const fastLabels = await f.optionLabels();
+        expect(fastLabels.slice(0, 2)).toEqual(["on", "off"]);
+        // The computed label survives instead of collapsing to its raw value.
+        expect(fastLabels[2]).toMatch(/^auto \(\d+ sec\)$/u);
+        await f.shot("bdyn3-fast-computed-label");
+      });
+    });
+
+    it(`class C — a free-form value stages, cancels, and dispatches (${theme})`, async () => {
+      await mkdir(ARTIFACT_DIR, { recursive: true });
+      await suite.withPage({ colorScheme: theme, viewport: VIEWPORT }, async ({ page }) => {
+        const f = await openChat(page, theme, `cmdargs-c-${theme}`);
+
+        await pickCommand(f, "/name");
+        await f.composer.press("Enter");
+        await f.stageInput.waitFor({ state: "visible" });
+        // The argument's own description becomes the prompt.
+        await expect
+          .poll(() => f.stageInput.getAttribute("placeholder"))
+          .toBe("New session name (omit to see a suggestion)");
+        await expect.poll(() => f.menu.count()).toBe(0);
+        await f.shot("c1-value-placeholder");
+
+        await f.stageInput.fill("Release prep");
+        await f.shot("c2-value-typed");
+
+        // Escape restores the composer instead of dumping a partial command.
+        await f.stageInput.press("Escape");
+        await expect.poll(() => f.stageInput.count()).toBe(0);
+        await expect.poll(() => f.composer.inputValue()).toBe("");
+        await expect
+          .poll(() => f.composer.evaluate((node) => document.activeElement === node))
+          .toBe(true);
+        expect(await f.sentMessages()).toEqual([]);
+        await f.shot("c3-escape-restored");
+
+        await pickCommand(f, "/name");
+        await f.composer.press("Enter");
+        await f.stageInput.waitFor({ state: "visible" });
+        await f.stageInput.fill("Release prep");
+        await f.stageInput.press("Enter");
+        await f.gateway.waitForRequest("chat.send");
+        expect(await f.sentMessages()).toEqual(["/name Release prep"]);
+        await f.shot("c4-dispatched");
+      });
+    });
+
+    it(`class C — a required argument refuses to dispatch while empty (${theme})`, async () => {
+      await mkdir(ARTIFACT_DIR, { recursive: true });
+      await suite.withPage({ colorScheme: theme, viewport: VIEWPORT }, async ({ page }) => {
+        const f = await openChat(page, theme, `cmdargs-creq-${theme}`);
+
+        await pickCommand(f, "/redirect");
+        await f.composer.press("Enter");
+        await f.stageInput.waitFor({ state: "visible" });
+        // /redirect declares no description, so the generic prompt fills in.
+        await expect.poll(() => f.stageInput.getAttribute("placeholder")).toBe("Enter message");
+        await expect.poll(() => f.stageInput.getAttribute("aria-required")).toBe("true");
+        await f.shot("creq1-required-empty");
+
+        await f.stageInput.press("Enter");
+        expect(await f.sentMessages()).toEqual([]);
+        await expect.poll(() => f.stageInput.count()).toBe(1);
+        await f.shot("creq2-refused");
+      });
+    });
+
+    it(`class D — a composite command chains every declared argument (${theme})`, async () => {
+      await mkdir(ARTIFACT_DIR, { recursive: true });
+      await suite.withPage({ colorScheme: theme, viewport: VIEWPORT }, async ({ page }) => {
+        const f = await openChat(page, theme, `cmdargs-d-${theme}`);
+
+        await pickCommand(f, "/session");
+        await f.composer.press("Enter");
+        await f.stageInput.waitFor({ state: "visible" });
+        await expect.poll(() => f.optionLabels()).toEqual(["idle", "max-age"]);
+        await f.shot("d1-action-choices");
+
+        // The regression this PR fixes: choosing the action used to dispatch
+        // /session idle immediately, with the duration never requested.
+        await f.stageInput.press("Enter");
+        expect(await f.sentMessages()).toEqual([]);
+        await expect.poll(() => f.stagePrefix.textContent()).toBe("/session idle");
+        await expect
+          .poll(() => f.stageInput.getAttribute("placeholder"))
+          .toBe("Duration (24h, 90m) or off");
+        await f.shot("d2-value-stage");
+
+        await f.stageInput.fill("24h");
+        await f.shot("d3-duration-typed");
+
+        await f.stageInput.press("Enter");
+        await f.gateway.waitForRequest("chat.send");
+        expect(await f.sentMessages()).toEqual(["/session idle 24h"]);
+        await expect.poll(() => f.stageInput.count()).toBe(0);
+        await f.shot("d4-dispatched");
+      });
+    });
+
+    it(`class D-multi — four declared arguments stage in order (${theme})`, async () => {
+      await mkdir(ARTIFACT_DIR, { recursive: true });
+      await suite.withPage({ colorScheme: theme, viewport: VIEWPORT }, async ({ page }) => {
+        const f = await openChat(page, theme, `cmdargs-dmulti-${theme}`);
+
+        await pickCommand(f, "/exec");
+        await f.composer.press("Enter");
+        await f.stageInput.waitFor({ state: "visible" });
+        await expect.poll(() => f.optionLabels()).toEqual(["sandbox", "gateway", "node"]);
+        await f.shot("dmulti1-host");
+
+        await f.stageInput.press("Enter");
+        await expect.poll(() => f.stagePrefix.textContent()).toBe("/exec sandbox");
+        await expect.poll(() => f.optionLabels()).toEqual(["deny", "allowlist", "full"]);
+        await f.shot("dmulti2-security");
+
+        await f.stageInput.press("ArrowDown");
+        await f.stageInput.press("Enter");
+        await expect.poll(() => f.stagePrefix.textContent()).toBe("/exec sandbox allowlist");
+        await expect.poll(() => f.optionLabels()).toEqual(["off", "on-miss", "always"]);
+        await f.shot("dmulti3-ask");
+
+        await f.stageInput.press("ArrowDown");
+        await f.stageInput.press("Enter");
+        await expect
+          .poll(() => f.stagePrefix.textContent())
+          .toBe("/exec sandbox allowlist on-miss");
+        // The last argument declares no choices, so it collects a value.
+        await expect.poll(() => f.menu.count()).toBe(0);
+        await expect.poll(() => f.stageInput.getAttribute("placeholder")).toBe("Node id or name");
+        await f.shot("dmulti4-node-value");
+
+        await f.stageInput.fill("worker-01");
+        await f.stageInput.press("Enter");
+        await f.gateway.waitForRequest("chat.send");
+        expect(await f.sentMessages()).toEqual(["/exec sandbox allowlist on-miss worker-01"]);
+        await f.shot("dmulti5-dispatched");
+      });
+    });
+
+    it(`class E — untyped commands keep their existing free-text behaviour (${theme})`, async () => {
+      await mkdir(ARTIFACT_DIR, { recursive: true });
+      await suite.withPage({ colorScheme: theme, viewport: VIEWPORT }, async ({ page }) => {
+        const f = await openChat(page, theme, `cmdargs-e-${theme}`);
+
+        await pickCommand(f, "/status");
+        await f.composer.press("Enter");
+        // Declared non-goal: the catalog carries no argument shape for these, so
+        // selection still writes the command into the draft and closes the menu.
+        await expect.poll(() => f.stageInput.count()).toBe(0);
+        await expect.poll(() => f.composer.inputValue()).toBe("/status ");
+        await expect.poll(() => f.menu.count()).toBe(0);
+        expect(await f.sentMessages()).toEqual([]);
+        await f.shot("e1-untyped-unchanged");
+      });
+    });
+
+    it(`accessibility — the staged input owns the combobox while staging (${theme})`, async () => {
+      await mkdir(ARTIFACT_DIR, { recursive: true });
+      await suite.withPage({ colorScheme: theme, viewport: VIEWPORT }, async ({ page }) => {
+        const f = await openChat(page, theme, `cmdargs-a11y-${theme}`);
+
+        await pickCommand(f, "/session");
+        await f.composer.press("Enter");
+        await f.stageInput.waitFor({ state: "visible" });
+
+        expect(await f.stageInput.getAttribute("role")).toBe("combobox");
+        expect(await f.stageInput.getAttribute("aria-expanded")).toBe("true");
+        expect(await f.stageInput.getAttribute("aria-controls")).toBeTruthy();
+        expect(await f.stageInput.getAttribute("aria-activedescendant")).toBeTruthy();
+        expect(await f.stageInput.getAttribute("aria-label")).toBe("Value for action");
+        // The textarea must not advertise a listbox it no longer drives.
+        expect(await f.composer.getAttribute("aria-controls")).toBeNull();
+        expect(await f.composer.getAttribute("aria-expanded")).toBeNull();
+        expect(await f.composer.getAttribute("aria-activedescendant")).toBeNull();
+        await f.shot("a11y1-staged-combobox");
       });
     });
   }
-
-  it("cancels a staged argument back into the message composer", async () => {
-    await suite.withPage({ viewport: VIEWPORT }, async ({ page }) => {
-      const gateway = await installMockGateway(page, {
-        deferredMethods: ["chat.send"],
-        methodResponses: {
-          "chat.startup": startupResponse("staged-command-cancel"),
-          "commands.list": { commands },
-        },
-      });
-
-      await page.goto(`${suite.server.baseUrl}chat`);
-      await gateway.waitForRequest("chat.startup");
-
-      const composer = page.locator(".agent-chat__composer-combobox textarea");
-      await composer.waitFor({ state: "visible" });
-      await expect.poll(() => composer.isEnabled()).toBe(true);
-      await composer.fill("/note");
-      await page.locator(".slash-menu[role='listbox']").waitFor({ state: "visible" });
-      await composer.press("Enter");
-
-      const stageInput = page.locator(".slash-arg-stage__input");
-      await stageInput.waitFor({ state: "visible" });
-      // A required argument must not dispatch while it is still empty.
-      await stageInput.press("Enter");
-      expect(await gateway.getRequests("chat.send")).toHaveLength(0);
-
-      await stageInput.press("Escape");
-      await expect.poll(() => page.locator(".slash-arg-stage").count()).toBe(0);
-      await expect.poll(() => composer.inputValue()).toBe("");
-      await expect
-        .poll(() => composer.evaluate((node) => document.activeElement === node))
-        .toBe(true);
-      expect(await gateway.getRequests("chat.send")).toHaveLength(0);
-    });
-  });
 });
