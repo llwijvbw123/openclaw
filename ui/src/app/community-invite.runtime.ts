@@ -3,6 +3,7 @@
 // the load that actually presents pays for the dialog and its art.
 import { CONTROL_UI_BUILD_INFO } from "../build-info.ts";
 import {
+  COMMUNITY_INVITE_KEY,
   isCommunityInviteSettled,
   readCommunityInviteRecord,
   writeCommunityInviteRecord,
@@ -23,10 +24,11 @@ const NEW_INSTALL_MIN_AGE_MS = 2 * 24 * 60 * 60 * 1000;
  * rule would hide the card from exactly the people using OpenClaw most; the
  * accumulator still proves five real minutes in the app before anything appears. */
 const DWELL_MS = 5 * 60 * 1000;
-/** Context lands with the first shell render. Bounded so a shell that never
- * publishes one cannot leave a timer chain alive. */
-const CONTEXT_POLL_MS = 1000;
-const CONTEXT_POLL_ATTEMPTS = 30;
+/** The card is once per browser, not once per tab. Every tab that reaches
+ * presentation asks for this lock and only the holder mounts; the rest stand down
+ * and learn the outcome from the storage listener below. A tab that closes without
+ * answering releases it, so the next qualified tab can take its turn. */
+const PRESENTATION_LOCK = "openclaw:control-ui:community-invite";
 
 export function communityInviteReadiness(
   record: CommunityInviteRecord,
@@ -61,15 +63,47 @@ export function operatorIsPresent(): boolean {
   return document.visibilityState === "visible" && document.hasFocus();
 }
 
-/** A modal must never take focus away from something the operator is typing into. */
+/** The card must never appear over something the operator is typing into.
+ * `document.activeElement` stops at a shadow host, and the surfaces that matter
+ * most here keep their field inside one — the terminal panel holds a ghostty
+ * textarea in its shadow root, so a document-level check sees only
+ * `openclaw-terminal-panel` and reads as "nobody is typing". Walk down to the
+ * innermost active element before judging. */
 export function editableElementFocused(): boolean {
-  const active = document.activeElement;
+  let active: Element | null = document.activeElement;
+  while (active?.shadowRoot?.activeElement) {
+    active = active.shadowRoot.activeElement;
+  }
   return (
     active instanceof HTMLElement &&
     (active.isContentEditable ||
       active instanceof HTMLInputElement ||
-      active instanceof HTMLTextAreaElement)
+      active instanceof HTMLTextAreaElement ||
+      active.getAttribute("role") === "textbox")
   );
+}
+
+/** Resolves to a release function when this tab owns the presentation, or to null
+ * when another tab already holds it. Where Web Locks are missing the shared record
+ * is the remaining guard: presentation still re-reads it, and a settlement in
+ * either tab still retires the other card through the storage listener. */
+function claimPresentation(): Promise<(() => void) | null> {
+  if (!("locks" in navigator)) {
+    return Promise.resolve(() => undefined);
+  }
+  return new Promise((resolve) => {
+    void navigator.locks
+      .request(PRESENTATION_LOCK, { ifAvailable: true }, (lock) => {
+        if (!lock) {
+          resolve(null);
+          return;
+        }
+        // Holding this promise open holds the lock; handing its resolver out makes
+        // releasing the lock the scheduler's job once the card goes away.
+        return new Promise<void>((release) => resolve(release));
+      })
+      .catch(() => resolve(null));
+  });
 }
 
 export function runCommunityInvite(host: CommunityInviteHost): () => void {
@@ -80,9 +114,10 @@ export function runCommunityInvite(host: CommunityInviteHost): () => void {
   let dwellStartedAtMs: number | null = null;
   let dwellSatisfied = false;
   let dwellTimer: ReturnType<typeof setTimeout> | null = null;
-  let contextTimer: ReturnType<typeof setTimeout> | null = null;
-  let contextAttempts = 0;
   let listening = false;
+  let mountedCard: HTMLElement | null = null;
+  let releaseClaim: (() => void) | null = null;
+  let unsubscribeShellUpdate: (() => void) | null = null;
   let unsubscribeGateway: (() => void) | null = null;
   let unsubscribeSessions: (() => void) | null = null;
 
@@ -114,6 +149,45 @@ export function runCommunityInvite(host: CommunityInviteHost): () => void {
     }
   };
 
+  /** Drops the card and the cross-tab claim together: a claim outliving its card
+   * would lock every other tab out for the rest of this tab's life. */
+  const removeCard = () => {
+    mountedCard?.remove();
+    mountedCard = null;
+    releaseClaim?.();
+    releaseClaim = null;
+  };
+
+  const presentCard = async () => {
+    const release = await claimPresentation();
+    if (!release) {
+      // Another tab owns the card. Its outcome reaches this one through storage.
+      return;
+    }
+    releaseClaim = release;
+    try {
+      const { COMMUNITY_INVITE_SETTLED_EVENT } =
+        await import("../components/community-invite-dialog.ts");
+      // Both awaits are points where the shell can go away or another tab can
+      // answer, so the disposer and the shared record are rechecked before mounting.
+      if (disposed || isCommunityInviteSettled(readCommunityInviteRecord())) {
+        removeCard();
+        return;
+      }
+      const card = document.createElement("openclaw-community-invite-dialog");
+      card.addEventListener(COMMUNITY_INVITE_SETTLED_EVENT, (event) => {
+        settle((event as CustomEvent<{ outcome: CommunityInviteOutcome }>).detail.outcome);
+        removeCard();
+      });
+      mountedCard = card;
+      document.body.append(card);
+    } catch {
+      // A failed chunk fetch leaves the record unsettled, so a later load retries.
+      presented = false;
+      removeCard();
+    }
+  };
+
   const tryPresent = () => {
     if (disposed || presented || !dwellSatisfied) {
       return;
@@ -122,26 +196,18 @@ export function runCommunityInvite(host: CommunityInviteHost): () => void {
       // No retry timer: the next visibility/focus event brings us back here.
       return;
     }
+    // Another tab may have answered the card while this one was waiting for a
+    // suitable moment. The record is the shared truth, so it decides, not the
+    // local state this scheduler qualified with.
+    if (isCommunityInviteSettled(readCommunityInviteRecord())) {
+      dispose();
+      return;
+    }
     // The card is terminal for this scheduler; stop watching before the chunk
     // lands so a late gateway event cannot arm a second one.
     presented = true;
     stopWatching();
-    void import("../components/community-invite-dialog.ts")
-      .then(({ COMMUNITY_INVITE_SETTLED_EVENT }) => {
-        if (disposed) {
-          return;
-        }
-        const card = document.createElement("openclaw-community-invite-dialog");
-        card.addEventListener(COMMUNITY_INVITE_SETTLED_EVENT, (event) => {
-          settle((event as CustomEvent<{ outcome: CommunityInviteOutcome }>).detail.outcome);
-          card.remove();
-        });
-        document.body.append(card);
-      })
-      .catch(() => {
-        // A failed chunk fetch leaves the record unsettled, so a later load retries.
-        presented = false;
-      });
+    void presentCard();
   };
 
   /** One-shot timer for the dwell remainder, alive only while the operator is here. */
@@ -198,6 +264,18 @@ export function runCommunityInvite(host: CommunityInviteHost): () => void {
     window.removeEventListener("blur", onEnvironmentChange);
   };
 
+  /** Another tab answering the card is the only foreign write to this key, and it
+   * ends this scheduler too: an already-answered nudge must not stay on screen in
+   * a second window. */
+  const onStorage = (event: StorageEvent) => {
+    if (
+      event.key === COMMUNITY_INVITE_KEY &&
+      isCommunityInviteSettled(readCommunityInviteRecord())
+    ) {
+      dispose();
+    }
+  };
+
   const evaluate = () => {
     const context = host.context;
     if (disposed || qualified || !context || host.onboardingMode) {
@@ -214,27 +292,33 @@ export function runCommunityInvite(host: CommunityInviteHost): () => void {
       now,
     );
     writeCommunityInviteRecord(record);
+    // Qualification is one-shot per load, so the inputs that decide it stop being
+    // watched here; only presence still matters from now on.
+    stopEligibilityWatch();
     if (communityInviteReadiness(record, now) === "ready") {
       startListening();
       armDwell();
     }
   };
 
-  function stopWatching() {
-    clearDwellTimer();
-    if (contextTimer !== null) {
-      clearTimeout(contextTimer);
-      contextTimer = null;
-    }
-    stopListening();
+  function stopEligibilityWatch() {
+    unsubscribeShellUpdate?.();
     unsubscribeGateway?.();
     unsubscribeSessions?.();
-    unsubscribeGateway = unsubscribeSessions = null;
+    unsubscribeShellUpdate = unsubscribeGateway = unsubscribeSessions = null;
+  }
+
+  function stopWatching() {
+    clearDwellTimer();
+    stopListening();
+    stopEligibilityWatch();
   }
 
   function dispose() {
     disposed = true;
+    window.removeEventListener("storage", onStorage);
     stopWatching();
+    removeCard();
   }
 
   // The shell can hand over a context before or after the gateway connects, so the
@@ -247,15 +331,17 @@ export function runCommunityInvite(host: CommunityInviteHost): () => void {
     unsubscribeGateway = context.gateway.subscribe(evaluate);
     unsubscribeSessions = context.sessions.subscribe(evaluate);
   };
-  const attachOrRetry = () => {
-    contextTimer = null;
+
+  window.addEventListener("storage", onStorage);
+  // Context arrival and leaving onboarding are both shell renders and nothing else,
+  // so this subscription is what makes them observable — and what replaces polling
+  // the shell for a context it had not published yet.
+  unsubscribeShellUpdate = host.subscribeShellUpdate(() => {
     attach();
     evaluate();
-    if (!disposed && !unsubscribeGateway && (contextAttempts += 1) < CONTEXT_POLL_ATTEMPTS) {
-      contextTimer = setTimeout(attachOrRetry, CONTEXT_POLL_MS);
-    }
-  };
-  attachOrRetry();
+  });
+  attach();
+  evaluate();
 
   return dispose;
 }

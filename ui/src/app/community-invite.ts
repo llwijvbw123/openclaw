@@ -3,12 +3,13 @@
 // answered the card is terminal here, so the lazy runtime chunk is never fetched
 // again. Every arming rule and the card itself live behind that boundary.
 
+import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { createIdleImport } from "../lib/idle-import.ts";
 import type { SessionCapability } from "../lib/sessions/session-capability.ts";
 import { getSafeLocalStorage } from "../local-storage.ts";
 import type { ApplicationGateway } from "./gateway.ts";
 
-const COMMUNITY_INVITE_KEY = "openclaw:control-ui:community-invite:v1";
+export const COMMUNITY_INVITE_KEY = "openclaw:control-ui:community-invite:v1";
 
 export type CommunityInviteOutcome = "joined" | "dismissed";
 
@@ -39,12 +40,59 @@ export type CommunityInviteHost = {
   /** The shell publishes its context on first render, so this is absent early. */
   readonly context?: CommunityInviteContext | null;
   readonly onboardingMode: boolean;
+  /** Context handover and onboarding mode both change only through a shell render
+   * and neither emits on the gateway or sessions capabilities, so leaving
+   * onboarding is invisible to those subscriptions. One subscription to the
+   * shell's render loop carries both, which is what lets the scheduler wait for
+   * them without holding a timer. */
+  readonly subscribeShellUpdate: (listener: () => void) => () => void;
 };
+
+/** Timestamps and counters both have to be real, non-negative numbers. */
+function isNonNegativeNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+/** localStorage is shared, hand-editable and survives across builds, so a stored
+ * value is untrusted input rather than a round-trip of our own write. Trusting it
+ * lets `{}` spread into `undefined + 1` and lets `{"settledAtMs": null}` read as
+ * settled, which would suppress the nudge on that browser forever. Anything that
+ * does not parse is dropped so the sequence simply starts over. */
+function parseCommunityInviteRecord(value: unknown): CommunityInviteRecord | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const { firstQualifiedAtMs, qualifiedLoads, established, settledAtMs, outcome } = value;
+  if (
+    !isNonNegativeNumber(firstQualifiedAtMs) ||
+    !isNonNegativeNumber(qualifiedLoads) ||
+    !Number.isInteger(qualifiedLoads) ||
+    typeof established !== "boolean"
+  ) {
+    return null;
+  }
+  const qualified = { firstQualifiedAtMs, qualifiedLoads, established };
+  if (settledAtMs === undefined) {
+    return qualified;
+  }
+  // Settled is terminal. A half-written settlement must not be the thing that
+  // silences the card, so it either reads back whole or not at all.
+  if (!isNonNegativeNumber(settledAtMs) || (outcome !== "joined" && outcome !== "dismissed")) {
+    return null;
+  }
+  const { settledVersion } = value;
+  return {
+    ...qualified,
+    settledAtMs,
+    outcome,
+    settledVersion: typeof settledVersion === "string" ? settledVersion : null,
+  };
+}
 
 export function readCommunityInviteRecord(): CommunityInviteRecord | null {
   try {
     const raw = getSafeLocalStorage()?.getItem(COMMUNITY_INVITE_KEY);
-    return raw ? (JSON.parse(raw) as CommunityInviteRecord) : null;
+    return raw ? parseCommunityInviteRecord(JSON.parse(raw)) : null;
   } catch {
     // Unreadable state means the nudge simply starts over; it never blocks the app.
     return null;

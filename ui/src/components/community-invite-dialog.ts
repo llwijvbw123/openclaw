@@ -12,10 +12,6 @@ import { icons } from "./icons.ts";
 
 export const COMMUNITY_INVITE_URL = "https://discord.gg/clawd";
 export const COMMUNITY_INVITE_SETTLED_EVENT = "community-invite-settled";
-/** Published on :root so `.app-toast` can stack above the card instead of over it. */
-const TOAST_RESERVE_PROPERTY = "--oc-community-invite-reserve-bottom";
-/** Gap between the card and a toast sitting on top of it. */
-const TOAST_RESERVE_GAP_PX = 10;
 
 // Solid brand mark: the shared lucide set is stroked, so this one carries its own fill.
 const discordMark = html`
@@ -31,8 +27,9 @@ const arrowUpRight = strokeIcon(svg` <path d="M7 17 17 7" />
 
 export class OpenClawCommunityInviteDialog extends OpenClawLitElement {
   static override styles = css`
-    /* Mirrors .app-toast's corner anchor (styles/components.css) so the two
-       floaters share one trailing-corner idiom instead of inventing a second. */
+    /* Trailing bottom corner: the opposite end from .app-toast, which pins to the
+       viewport top (styles/components.css), so the two floaters never contend for
+       the same space and neither has to reserve room for the other. */
     :host {
       position: fixed;
       right: calc(20px + var(--safe-area-right, 0px));
@@ -42,7 +39,7 @@ export class OpenClawCommunityInviteDialog extends OpenClawLitElement {
       animation: invite-enter 180ms ease-out both;
     }
 
-    /* Same phone idiom as .app-toast: a corner card degenerates at these widths. */
+    /* Same phone idiom .app-toast uses: a corner card degenerates at these widths. */
     @media (max-width: 768px),
       (max-width: 932px) and (max-height: 500px) and (orientation: landscape) {
       :host {
@@ -249,31 +246,6 @@ export class OpenClawCommunityInviteDialog extends OpenClawLitElement {
   `;
 
   private settled = false;
-  private resizeObserver: ResizeObserver | null = null;
-
-  override connectedCallback() {
-    super.connectedCallback();
-    // Publish our height so .app-toast can sit above the card. Toasts are
-    // transient and higher priority, so they stack on top; the card owns the
-    // corner and yields the space.
-    this.resizeObserver = new ResizeObserver(() => this.publishToastReserve());
-    this.resizeObserver.observe(this);
-  }
-
-  override disconnectedCallback() {
-    this.resizeObserver?.disconnect();
-    this.resizeObserver = null;
-    document.documentElement.style.removeProperty(TOAST_RESERVE_PROPERTY);
-    super.disconnectedCallback();
-  }
-
-  private publishToastReserve() {
-    const height = Math.ceil(this.getBoundingClientRect().height);
-    document.documentElement.style.setProperty(
-      TOAST_RESERVE_PROPERTY,
-      height > 0 ? `${height + TOAST_RESERVE_GAP_PX}px` : "0px",
-    );
-  }
 
   override render() {
     return html`

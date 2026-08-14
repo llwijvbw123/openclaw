@@ -1,8 +1,13 @@
 /* @vitest-environment jsdom */
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { communityInviteReadiness, recordQualifiedLoad } from "./community-invite.runtime.ts";
-import type { CommunityInviteRecord } from "./community-invite.ts";
+import {
+  COMMUNITY_INVITE_KEY,
+  isCommunityInviteSettled,
+  readCommunityInviteRecord,
+  type CommunityInviteRecord,
+} from "./community-invite.ts";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const NOW = 1_760_000_000_000;
@@ -97,13 +102,8 @@ describe("communityInviteReadiness", () => {
       expected: "ready",
     },
     {
-      name: "a settled record never arms again",
+      name: "a settled record never arms again, however it was answered",
       record: record({ qualifiedLoads: 9, settledAtMs: NOW - DAY_MS, outcome: "joined" }),
-      expected: "waiting",
-    },
-    {
-      name: "a dismissed record never arms again",
-      record: record({ qualifiedLoads: 9, settledAtMs: NOW - DAY_MS, outcome: "dismissed" }),
       expected: "waiting",
     },
   ];
@@ -122,5 +122,85 @@ describe("communityInviteReadiness", () => {
     });
     expect(communityInviteReadiness(boundary, NOW)).toBe("ready");
     expect(communityInviteReadiness(boundary, NOW - 1)).toBe("waiting");
+  });
+});
+
+describe("readCommunityInviteRecord", () => {
+  afterEach(() => {
+    localStorage.clear();
+  });
+
+  function storeRaw(raw: string): void {
+    localStorage.setItem(COMMUNITY_INVITE_KEY, raw);
+  }
+
+  it("reads back a record it wrote", () => {
+    const stored = record({ qualifiedLoads: 4 });
+    storeRaw(JSON.stringify(stored));
+    expect(readCommunityInviteRecord()).toEqual(stored);
+  });
+
+  const rejected: ReadonlyArray<{ name: string; raw: string }> = [
+    { name: "a non-object payload", raw: '"settled"' },
+    { name: "an array, which spreads into nonsense", raw: "[]" },
+    // `{}` used to spread into the next write as `undefined + 1` qualified loads.
+    { name: "an empty object with no counters at all", raw: "{}" },
+    {
+      name: "a non-finite first sighting, which would freeze the arming window",
+      raw: JSON.stringify({ firstQualifiedAtMs: null, qualifiedLoads: 2, established: true }),
+    },
+    {
+      name: "a fractional load count",
+      raw: JSON.stringify({ firstQualifiedAtMs: NOW, qualifiedLoads: 1.5, established: true }),
+    },
+    {
+      name: "a negative load count",
+      raw: JSON.stringify({ firstQualifiedAtMs: NOW, qualifiedLoads: -1, established: true }),
+    },
+    {
+      name: "a missing cohort flag",
+      raw: JSON.stringify({ firstQualifiedAtMs: NOW, qualifiedLoads: 2 }),
+    },
+    {
+      name: "a settlement carrying no outcome",
+      raw: JSON.stringify({
+        firstQualifiedAtMs: NOW,
+        qualifiedLoads: 2,
+        established: true,
+        settledAtMs: NOW,
+      }),
+    },
+    {
+      name: "a settlement with an outcome outside the union",
+      raw: JSON.stringify({
+        firstQualifiedAtMs: NOW,
+        qualifiedLoads: 2,
+        established: true,
+        settledAtMs: NOW,
+        outcome: "ignored",
+      }),
+    },
+    { name: "text that is not JSON at all", raw: "{not json" },
+  ];
+
+  for (const testCase of rejected) {
+    it(`drops ${testCase.name}`, () => {
+      storeRaw(testCase.raw);
+      expect(readCommunityInviteRecord()).toBeNull();
+    });
+  }
+
+  it("does not read a null settlement as settled, which would silence the card forever", () => {
+    // `settledAtMs !== undefined` is what isCommunityInviteSettled asks, so a null
+    // here used to be terminal for that browser with no way back.
+    storeRaw(
+      JSON.stringify({
+        firstQualifiedAtMs: NOW,
+        qualifiedLoads: 2,
+        established: true,
+        settledAtMs: null,
+      }),
+    );
+    expect(isCommunityInviteSettled(readCommunityInviteRecord())).toBe(false);
   });
 });

@@ -169,6 +169,7 @@ class OpenClawShell
   outboxStoreRuntime: OutboxStoreRuntime | null = null;
   private outboxStoreUnsubscribe: (() => void) | null = null;
   private stopCommunityInvite: (() => void) | null = null;
+  private readonly shellUpdateListeners = new Set<() => void>();
   readonly outboxStoreImport = createIdleImport(
     () => import("../lib/chat/outbox-store.ts").then((module): OutboxStoreRuntime => module),
     (runtime) => this.installOutboxStoreRuntime(runtime),
@@ -195,6 +196,16 @@ class OpenClawShell
   get onboardingMode(): boolean {
     const routeSearch = this.routeState.location?.search;
     return routeSearch === undefined ? this.onboarding : resolveOnboardingMode(routeSearch);
+  }
+
+  /** Route-derived shell state, `context` among it, changes without any capability
+   * emitting: leaving onboarding is only a new route. Owners that read those
+   * getters subscribe here rather than polling the shell for them. */
+  subscribeShellUpdate(listener: () => void): () => void {
+    this.shellUpdateListeners.add(listener);
+    return () => {
+      this.shellUpdateListeners.delete(listener);
+    };
   }
 
   storedOutboxScopeHost(context: ApplicationContext<RouteId>): StoredOutboxScopeHost {
@@ -518,6 +529,9 @@ class OpenClawShell
 
   override updated() {
     this.syncDocumentTitle();
+    for (const listener of this.shellUpdateListeners) {
+      listener();
+    }
     const chatPage = this.querySelector<ChatPage>("openclaw-chat-page");
     if (chatPage) {
       chatPage.navDrawerOpen = this.navDrawerOpen && !this.onboardingMode;
