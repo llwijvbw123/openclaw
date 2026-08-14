@@ -273,8 +273,10 @@ describe("node worker tunnel manager", () => {
   it("keeps cancellation authorized until an active launch settles", async () => {
     const record = environment();
     let cancellationWasAuthorized = false;
-    const launch: NodeWorkerLaunch = async (request): Promise<TerminalReceipt> =>
-      await new Promise<TerminalReceipt>((resolve) => {
+    const onDispatchReady = vi.fn();
+    const launch: NodeWorkerLaunch = async (request): Promise<TerminalReceipt> => {
+      request.onDispatchReady?.();
+      return await new Promise<TerminalReceipt>((resolve) => {
         request.signal?.addEventListener(
           "abort",
           () => {
@@ -294,6 +296,7 @@ describe("node worker tunnel manager", () => {
           { once: true },
         );
       });
+    };
     const launchNodeWorker = vi.fn(launch);
     const manager = createNodeWorkerTunnelManager({
       gatewayDeviceId: "gateway-device-1",
@@ -304,8 +307,14 @@ describe("node worker tunnel manager", () => {
       workspaceTransfer: workspaceTransfer(),
     });
     const handle = await manager.start(startRequest());
-    const launched = handle.launchTurn({ plan: plan(), placementGeneration: 4, timeoutMs: 5_000 });
+    const launched = handle.launchTurn({
+      plan: plan(),
+      placementGeneration: 4,
+      timeoutMs: 5_000,
+      onDispatchReady,
+    });
     await vi.waitFor(() => expect(launchNodeWorker).toHaveBeenCalledOnce());
+    expect(onDispatchReady).toHaveBeenCalledOnce();
 
     await handle.stop();
 
