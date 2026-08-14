@@ -72,9 +72,27 @@ async function openChat(page: Page, theme: Theme, sessionId: string): Promise<Fi
     menu,
     stageInput: page.locator(".slash-arg-stage__input"),
     stagePrefix: page.locator(".slash-arg-stage__prefix"),
+    // The slash menu is `position: absolute; bottom: 100%`, so it lives entirely
+    // outside the composer shell's box. Clipping to the shell alone silently drops
+    // the option list -- the exact thing these captures exist to show -- so union
+    // the shell with the menu whenever the menu is open.
     shot: async (name: string) => {
-      await page.locator(".agent-chat__composer-shell").screenshot({
+      const shell = await page.locator(".agent-chat__composer-shell").boundingBox();
+      if (!shell) throw new Error(`composer shell not visible for shot ${name}`);
+      const popup = (await menu.isVisible()) ? await menu.boundingBox() : null;
+      const top = Math.min(shell.y, popup?.y ?? shell.y);
+      const bottom = Math.max(shell.y + shell.height, (popup?.y ?? 0) + (popup?.height ?? 0));
+      const left = Math.min(shell.x, popup?.x ?? shell.x);
+      const right = Math.max(shell.x + shell.width, (popup?.x ?? 0) + (popup?.width ?? 0));
+      const pad = 8;
+      await page.screenshot({
         animations: "disabled",
+        clip: {
+          x: Math.max(0, left - pad),
+          y: Math.max(0, top - pad),
+          width: right - left + pad * 2,
+          height: bottom - top + pad * 2,
+        },
         path: path.join(ARTIFACT_DIR, `${theme}-${name}.png`),
       });
     },
