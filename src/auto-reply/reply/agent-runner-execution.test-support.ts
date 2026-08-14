@@ -187,6 +187,7 @@ vi.mock("../../agents/embedded-agent-helpers.js", async () => {
 
 vi.mock("../../config/sessions.js", () => ({
   resolveGroupSessionKey: vi.fn(() => null),
+  resolveSessionStorePathCore: () => "/tmp/sessions.json",
   resolveSessionTranscriptPath: vi.fn(),
   updateSessionStore: state.updateSessionStoreMock,
 }));
@@ -527,6 +528,8 @@ export function createMockReplyOperation(options?: { abortSignal?: AbortSignal }
       updateSessionId: updateSessionIdMock,
       updateSessionKey: vi.fn(),
       bindToolAuthorityFingerprint: vi.fn(),
+      bindToolAuthorityProjector: vi.fn(),
+      projectToolAuthorityFingerprint: vi.fn(),
       bindToolAuthorityRoute: vi.fn(),
       attachBackend: vi.fn(),
       detachBackend: vi.fn(),

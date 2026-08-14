@@ -11,6 +11,10 @@ import {
   createReplyOperation as createRegisteredReplyOperation,
   type ReplyOperation,
 } from "./reply-run-registry.js";
+import {
+  createFollowupRunToolAuthorityProjector,
+  resolveFollowupRunToolAuthorityFingerprint,
+} from "./reply-tool-authority.js";
 import { createMockFollowupRun, createMockTypingController } from "./test-helpers.js";
 
 const runEmbeddedAgentMock = vi.fn();
@@ -54,7 +58,8 @@ const EXPECTED_STEER_QUEUE_IDENTITY =
 const TEST_TOOL_AUTHORITY_FINGERPRINT = "test-tool-authority";
 
 vi.mock("./reply-tool-authority.js", () => ({
-  resolveFollowupRunToolAuthorityFingerprint: () => "test-tool-authority",
+  createFollowupRunToolAuthorityProjector: () => () => TEST_TOOL_AUTHORITY_FINGERPRINT,
+  resolveFollowupRunToolAuthorityFingerprint: () => TEST_TOOL_AUTHORITY_FINGERPRINT,
 }));
 
 vi.mock("../../agents/model-fallback-runner.js", () => ({
@@ -294,17 +299,20 @@ vi.mock("./reply-media-paths.runtime.js", async (importOriginal) => {
 
 const { runReplyAgent } = await import("./agent-runner.js");
 
-function createReplyOperation(): ReplyOperation {
+function createReplyOperation(
+  toolAuthorityFingerprint = TEST_TOOL_AUTHORITY_FINGERPRINT,
+): ReplyOperation {
   return {
     result: undefined,
-    toolAuthorityFingerprint: TEST_TOOL_AUTHORITY_FINGERPRINT,
+    toolAuthorityFingerprint,
     abortSignal: new AbortController().signal,
     startedAtMs: Date.now(),
     lastActivityAtMs: Date.now(),
     recordActivity: vi.fn(),
-    setPhase: vi.fn(),
     bindToolAuthorityFingerprint: vi.fn(),
+    bindToolAuthorityProjector: vi.fn(),
     bindToolAuthorityRoute: vi.fn(),
+    setPhase: vi.fn(),
     freezeAbort: vi.fn(),
     fail: vi.fn(),
     complete: vi.fn(),
@@ -322,10 +330,9 @@ function makeRunReplyAgentParams(
   const provider = overrides.provider ?? "whatsapp";
   const prompt = overrides.prompt ?? "generate chart";
   const workspaceDir = overrides.workspaceDir ?? "/tmp/workspace";
-
-  return {
-    commandBody: prompt,
-    followupRun: createMockFollowupRun({
+  const followupRun =
+    overrides.followupRun ??
+    (createMockFollowupRun({
       prompt,
       run: {
         agentId: "main",
@@ -333,7 +340,13 @@ function makeRunReplyAgentParams(
         messageProvider: provider,
         workspaceDir,
       },
-    }) as unknown as FollowupRun,
+    }) as unknown as FollowupRun);
+  const replyOperation =
+    overrides.replyOperation ??
+    createReplyOperation(resolveFollowupRunToolAuthorityFingerprint(followupRun));
+
+  return {
+    commandBody: prompt,
     queueKey: "main",
     resolvedQueue: { mode: "interrupt" } as QueueSettings,
     shouldSteer: false,
@@ -355,8 +368,9 @@ function makeRunReplyAgentParams(
     resolvedBlockStreamingBreak: "message_end",
     shouldInjectGroupIntro: false,
     typingMode: "instant",
-    replyOperation: createReplyOperation(),
     ...overrides,
+    followupRun,
+    replyOperation,
   };
 }
 
@@ -585,13 +599,18 @@ describe("runReplyAgent media path normalization", () => {
   });
 
   it("latches audio only after the active reply operation accepts the steer", async () => {
+    const followupRun = {
+      ...createMockFollowupRun({ prompt: "summarize the audio" }),
+      currentInboundAudio: true,
+    } as unknown as FollowupRun;
     const operation = createRegisteredReplyOperation({
       sessionKey: "agent:main:whatsapp:direct:chat-1",
       sessionId: "session",
       resetTriggered: false,
     });
+    operation.bindToolAuthorityProjector(createFollowupRunToolAuthorityProjector(followupRun));
+    operation.bindToolAuthorityFingerprint(resolveFollowupRunToolAuthorityFingerprint(followupRun));
     operation.setPhase("running");
-    operation.bindToolAuthorityFingerprint(TEST_TOOL_AUTHORITY_FINGERPRINT);
     expect(operation.acceptedSteeredInboundAudio).toBe(false);
     queueEmbeddedAgentMessageWithOutcomeAsyncMock.mockImplementation(async (sessionId: string) => ({
       queued: true,
@@ -608,10 +627,7 @@ describe("runReplyAgent media path normalization", () => {
         shouldSteer: true,
         shouldFollowup: true,
         isActive: true,
-        followupRun: {
-          ...createMockFollowupRun({ prompt: "summarize the audio" }),
-          currentInboundAudio: true,
-        } as unknown as FollowupRun,
+        followupRun,
       }),
     );
 
