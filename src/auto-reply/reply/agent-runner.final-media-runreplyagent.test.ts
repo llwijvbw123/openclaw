@@ -119,7 +119,6 @@ function createReplyOperation(): ReplyOperation {
     bindToolAuthorityProjector: vi.fn(),
     bindToolAuthorityRoute: vi.fn(),
     setPhase: vi.fn(),
-    bindToolAuthorityFingerprint: vi.fn(),
     freezeAbort: vi.fn(),
     fail: vi.fn(),
     complete: vi.fn(),
