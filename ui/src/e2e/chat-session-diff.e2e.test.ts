@@ -313,14 +313,17 @@ describeControlUiE2e("session diff panel", () => {
     const context = await newBrowserContext();
     const page = await context.newPage();
     const gateway = await installMockGateway(page, {
-      featureMethods: ["chat.metadata", "chat.startup", "sessions.diff"],
+      featureMethods: [
+        "chat.metadata",
+        "chat.startup",
+        "sessions.diff",
+        "sessions.workspace.status",
+      ],
       methodResponses: {
-        "sessions.files.list": {
+        "sessions.workspace.status": {
           sessionKey: "main",
           root: "/tmp/plain-workspace",
           gitCheckout: false,
-          files: [],
-          browser: { path: "", entries: [] },
         },
         "sessions.diff": {
           sessionKey: "main",
@@ -333,24 +336,24 @@ describeControlUiE2e("session diff panel", () => {
     });
     await page.goto(`${server.baseUrl}chat`);
     await expect
-      .poll(async () => (await gateway.getRequests("sessions.files.list")).length)
+      .poll(async () => (await gateway.getRequests("sessions.workspace.status")).length)
       .toBe(1);
+    expect(await gateway.getRequests("sessions.files.list")).toHaveLength(0);
 
     const toggles = page.locator(".chat-session-diff-toggle");
     await expect.poll(() => toggles.count()).toBe(0);
     await expect.poll(() => page.locator(".session-diff").count()).toBe(0);
 
-    await gateway.setMethodResponse("sessions.files.list", {
+    await gateway.setMethodResponse("sessions.workspace.status", {
       sessionKey: "main",
       root: "/tmp/plain-workspace",
       gitCheckout: true,
-      files: [],
-      browser: { path: "", entries: [] },
     });
     await gateway.emitChatFinal({ runId: "git-init-run", text: "Initialized repository." });
     await expect
-      .poll(async () => (await gateway.getRequests("sessions.files.list")).length)
+      .poll(async () => (await gateway.getRequests("sessions.workspace.status")).length)
       .toBe(2);
+    expect(await gateway.getRequests("sessions.files.list")).toHaveLength(0);
 
     await expect.poll(() => toggles.count()).toBe(1);
     await expect.poll(() => toggles.first().isEnabled()).toBe(true);
