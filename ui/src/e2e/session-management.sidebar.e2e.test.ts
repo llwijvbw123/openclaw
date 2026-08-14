@@ -1046,4 +1046,58 @@ suite.define(() => {
       await context.close();
     }
   });
+
+  it("renders a pinned session with the same typography and density as a listed one", async () => {
+    const context = await suite.browser.newContext({
+      colorScheme: "dark",
+      locale: "en-US",
+      serviceWorkers: "block",
+      viewport: { height: 900, width: 1280 },
+    });
+    const page = await context.newPage();
+    await installMockGateway(page, {
+      methodResponses: {
+        "sessions.list": sessionsListResponse([
+          sessionRow("agent:main:pinned", "Pinned thread", Date.parse("2026-07-01T16:00:00.000Z"), {
+            pinned: true,
+          }),
+          sessionRow("agent:main:listed", "Listed thread", Date.parse("2026-07-01T15:59:00.000Z")),
+        ]),
+      },
+      featureMethods: ["chat.metadata", "chat.startup"],
+      sessionKey: "agent:main:listed",
+    });
+
+    try {
+      await page.goto(`${suite.server.baseUrl}chat`);
+
+      const readRow = (key: string) =>
+        page.locator(`.sidebar-recent-session[data-session-key="${key}"]`).evaluate((row) => {
+          const name = row.querySelector(".sidebar-recent-session__name");
+          if (!name) {
+            throw new Error("expected a session title");
+          }
+          const rowStyle = getComputedStyle(row);
+          const nameStyle = getComputedStyle(name);
+          return {
+            color: nameStyle.color,
+            fontSize: nameStyle.fontSize,
+            fontWeight: nameStyle.fontWeight,
+            height: Math.round(row.getBoundingClientRect().height),
+            lineHeight: nameStyle.lineHeight,
+            minHeight: rowStyle.minHeight,
+            rowColor: rowStyle.color,
+          };
+        });
+
+      const pinned = await readRow("agent:main:pinned");
+      const listed = await readRow("agent:main:listed");
+      // Placement and pin state are the only permitted differences: a pinned
+      // row that borrows page-navigation type or density stops reading as a
+      // session and the two lists visibly drift apart.
+      expect(pinned).toEqual(listed);
+    } finally {
+      await context.close();
+    }
+  });
 });

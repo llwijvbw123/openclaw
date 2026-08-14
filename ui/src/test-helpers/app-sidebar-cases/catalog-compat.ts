@@ -188,8 +188,8 @@ describe("AppSidebar session catalog pagination", () => {
       expect(
         codexSection?.querySelector(".sidebar-session-group-toggle")?.getAttribute("title"),
       ).toContain("Settings > Automation > Plugins");
-      expect(codexSection?.querySelector('[data-session-catalog-error="codex"]')).not.toBeNull();
-      expect(claudeSection?.querySelector('[data-session-catalog-error="claude"]')).not.toBeNull();
+      expect(codexSection?.querySelector('[data-section-status="error"]')).not.toBeNull();
+      expect(claudeSection?.querySelector('[data-section-status="error"]')).not.toBeNull();
     } finally {
       vi.useRealTimers();
     }
@@ -259,7 +259,7 @@ describe("AppSidebar session catalog pagination", () => {
       await vi.advanceTimersByTimeAsync(0);
       await sidebar.updateComplete;
 
-      expect(section()?.querySelector('[data-session-catalog-error="codex"]')).not.toBeNull();
+      expect(section()?.querySelector('[data-section-status="error"]')).not.toBeNull();
       expect(
         section()?.querySelector(".sidebar-session-group-toggle")?.getAttribute("aria-label"),
       ).toContain("Second page unavailable");
@@ -276,7 +276,7 @@ describe("AppSidebar session catalog pagination", () => {
         catalogId: "codex",
         cursors: { "gateway:local": "page-2" },
       });
-      expect(section()?.querySelector('[data-session-catalog-error="codex"]')).toBeNull();
+      expect(section()?.querySelector('[data-section-status="error"]')).toBeNull();
       expect(sidebar.textContent).toContain("Older");
       expect(loadMore()).toBeNull();
     } finally {
