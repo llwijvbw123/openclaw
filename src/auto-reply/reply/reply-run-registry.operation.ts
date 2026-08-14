@@ -16,6 +16,7 @@ import {
   ReplyRunSuccessorAdmissionBlockedError,
   type ReplyOperation,
   type ReplyOperationPhase,
+  type ReplyTurnKind,
 } from "./reply-run-registry.contracts.js";
 import {
   abortFrozenOperations,
@@ -52,6 +53,7 @@ type ReplyOperationStaleReason = replyRunSettle.ReplyOperationStaleReason;
 export function createReplyOperation(params: {
   sessionKey: string;
   sessionId: string;
+  turnKind?: ReplyTurnKind;
   resetTriggered: boolean;
   routeThreadId?: string | number;
   originatingLeafEntryId?: string | null;
@@ -220,6 +222,7 @@ export function createReplyOperation(params: {
     get sessionId() {
       return currentSessionId;
     },
+    turnKind: params.turnKind ?? "visible",
     lifecycleGeneration,
     get routeThreadId() {
       return params.routeThreadId;

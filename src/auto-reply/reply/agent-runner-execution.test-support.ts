@@ -502,6 +502,7 @@ export function createMockReplyOperation(options?: { abortSignal?: AbortSignal }
     replyOperation: {
       key: "main",
       sessionId: "session",
+      turnKind: "visible",
       abortSignal: options?.abortSignal ?? new AbortController().signal,
       staleExpiryReason: undefined,
       resetTriggered: false,
