@@ -3169,16 +3169,19 @@ wa-dropdown-item.session-menu__item::part(submenu-icon) {
 .sidebar-footer-bar {
   display: flex;
   align-items: center;
-  padding: 6px 12px;
+  gap: 4px;
+  min-height: 60px;
+  padding: 4px 0 2px;
 }
 
 .sidebar-identity-card {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
+  width: auto;
+  flex: 1 1 auto;
   min-width: 0;
-  padding: 5px 6px;
+  padding: 5px var(--sidebar-row-inset, 10px);
   border: none;
   border-radius: var(--radius-md);
   background: transparent;
@@ -3196,13 +3199,13 @@ wa-dropdown-item.session-menu__item::part(submenu-icon) {
 }
 
 .sidebar-identity-card:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent) 48%, transparent);
-  outline-offset: 1px;
+  outline: none;
+  box-shadow: var(--sidebar-focus-ring);
 }
 
 .sidebar-identity-card .viewer-avatar--footer {
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   flex: none;
   font-size: 10px;
 }
@@ -3280,20 +3283,20 @@ wa-dropdown-item.session-menu__item::part(submenu-icon) {
   border: 0;
 }
 
-.sidebar-identity-card__chevron {
+.sidebar-identity-card__more {
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
   flex: none;
+  margin-inline-start: auto;
   color: var(--muted);
 }
 
-.sidebar-identity-card__chevron svg {
-  width: 13px;
-  height: 13px;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 1.5px;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+.sidebar-identity-card__more svg {
+  width: 16px;
+  height: 16px;
 }
 
 openclaw-tooltip.sidebar-hover-tooltip {
@@ -3482,19 +3485,94 @@ openclaw-tooltip.sidebar-hover-tooltip {
 }
 
 .sidebar-identity-menu {
+  --menu-item-height: 32px;
+  --menu-padding: 6px;
+
   overflow: visible;
 }
 
 wa-dropdown.sidebar-identity-menu::part(menu) {
   min-width: max(224px, var(--sidebar-identity-menu-min-width, 224px));
+  border-color: transparent;
+  border-radius: var(--radius-md);
+  box-shadow:
+    0 0 0 1px var(--overlay-border),
+    var(--overlay-shadow);
 }
 
 .sidebar-identity-menu__header {
-  min-height: 24px;
-  padding: 0 8px;
-  color: var(--muted);
-  font-size: var(--control-ui-text-xs);
+  min-height: 42px;
+  padding: 3px 4px;
+}
+
+.sidebar-identity-menu__avatar {
+  display: inline-grid;
+  width: 20px;
+  height: 26px;
+  place-items: center;
+  overflow: visible;
+}
+
+.sidebar-identity-menu__avatar .viewer-avatar--footer {
+  width: 26px;
+  height: 26px;
+  font-size: calc(10px * var(--control-ui-text-scale));
+}
+
+.sidebar-identity-menu__identity {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+  line-height: 1.25;
+}
+
+.sidebar-identity-menu__name,
+.sidebar-identity-menu__email {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-identity-menu__name {
+  color: var(--text);
+  font-size: calc(13px * var(--control-ui-text-scale));
   font-weight: 500;
+}
+
+.sidebar-identity-menu__email {
+  color: var(--muted);
+  font-size: calc(12px * var(--control-ui-text-scale));
+  font-weight: 400;
+}
+
+.sidebar-identity-menu .sidebar-customize-menu__text {
+  color: var(--text);
+  font-size: calc(13px * var(--control-ui-text-scale));
+}
+
+.sidebar-identity-menu .sidebar-customize-menu__item {
+  padding-inline: 4px;
+}
+
+.sidebar-identity-menu .sidebar-customize-menu__separator {
+  margin-block: 4px;
+}
+
+.sidebar-identity-menu .nav-item__icon {
+  width: 20px;
+  height: 20px;
+}
+
+.sidebar-identity-menu .nav-item__icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.sidebar-identity-menu__help::part(submenu-icon) {
+  inset-inline-end: 4px;
+  width: 16px;
+  height: 16px;
 }
 
 .sidebar-agent-menu__filter {
@@ -3527,7 +3605,7 @@ wa-dropdown.sidebar-identity-menu::part(menu) {
   justify-content: space-between;
   gap: 8px;
   min-width: 0;
-  padding: 4px 8px 2px;
+  padding: 2px 4px;
 }
 
 /* Host elements are display:contents, so the anchor itself is the flex item;
@@ -3538,7 +3616,7 @@ wa-dropdown.sidebar-identity-menu::part(menu) {
   overflow: hidden;
   color: var(--muted);
   font-family: var(--mono);
-  font-size: var(--control-ui-text-xs);
+  font-size: calc(11px * var(--control-ui-text-scale));
   text-overflow: ellipsis;
   white-space: nowrap;
   text-decoration: none;
