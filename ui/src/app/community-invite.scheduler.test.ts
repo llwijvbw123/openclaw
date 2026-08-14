@@ -133,10 +133,11 @@ function cardMounted(): boolean {
 }
 
 /** Presentation crosses the cross-tab claim and then the chunk import, so it
- * settles two promise hops after the dwell timer fires. */
+ * settles a few promise hops after the dwell timer fires. */
 async function flushImport(): Promise<void> {
-  await vi.advanceTimersByTimeAsync(0);
-  await vi.advanceTimersByTimeAsync(0);
+  for (let hop = 0; hop < 3; hop += 1) {
+    await vi.advanceTimersByTimeAsync(0);
+  }
 }
 
 beforeEach(() => {

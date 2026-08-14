@@ -1,9 +1,9 @@
-// One-shot Discord community nudge. This module is the persistence owner and the
-// only part of the invite that the startup graph pays for: an operator who already
-// answered the card is terminal here, so the lazy runtime chunk is never fetched
-// again. Every arming rule and the card itself live behind that boundary.
+// One-shot Discord community nudge. This module is the only part of the invite the
+// startup graph pays for, so it holds one decision and nothing else: an operator
+// who already answered the card is terminal here and the lazy runtime chunk is
+// never fetched again. Reading, validating and writing the record belongs to that
+// chunk, along with every arming rule and the card itself.
 
-import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { createIdleImport } from "../lib/idle-import.ts";
 import type { SessionCapability } from "../lib/sessions/session-capability.ts";
 import { getSafeLocalStorage } from "../local-storage.ts";
@@ -48,72 +48,42 @@ export type CommunityInviteHost = {
   readonly subscribeShellUpdate: (listener: () => void) => () => void;
 };
 
-/** Timestamps and counters both have to be real, non-negative numbers. */
-function isNonNegativeNumber(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+/** Timestamps and counters both have to be real, non-negative numbers. Shared with
+ * the runtime chunk's record parser so the startup probe below and the full parse
+ * cannot drift on what a valid record looks like. */
+export function readNonNegativeNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
-/** localStorage is shared, hand-editable and survives across builds, so a stored
- * value is untrusted input rather than a round-trip of our own write. Trusting it
- * lets `{}` spread into `undefined + 1` and lets `{"settledAtMs": null}` read as
- * settled, which would suppress the nudge on that browser forever. Anything that
- * does not parse is dropped so the sequence simply starts over. */
-function parseCommunityInviteRecord(value: unknown): CommunityInviteRecord | null {
-  if (!isRecord(value)) {
-    return null;
-  }
-  const { firstQualifiedAtMs, qualifiedLoads, established, settledAtMs, outcome } = value;
-  if (
-    !isNonNegativeNumber(firstQualifiedAtMs) ||
-    !isNonNegativeNumber(qualifiedLoads) ||
-    !Number.isInteger(qualifiedLoads) ||
-    typeof established !== "boolean"
-  ) {
-    return null;
-  }
-  const qualified = { firstQualifiedAtMs, qualifiedLoads, established };
-  if (settledAtMs === undefined) {
-    return qualified;
-  }
-  // Settled is terminal. A half-written settlement must not be the thing that
-  // silences the card, so it either reads back whole or not at all.
-  if (!isNonNegativeNumber(settledAtMs) || (outcome !== "joined" && outcome !== "dismissed")) {
-    return null;
-  }
-  const { settledVersion } = value;
-  return {
-    ...qualified,
-    settledAtMs,
-    outcome,
-    settledVersion: typeof settledVersion === "string" ? settledVersion : null,
-  };
+export function readCommunityInviteOutcome(value: unknown): CommunityInviteOutcome | null {
+  return value === "joined" || value === "dismissed" ? value : null;
 }
 
-export function readCommunityInviteRecord(): CommunityInviteRecord | null {
+/** The only question the startup graph asks, so it stays cheap: has this browser
+ * already answered the card? A settlement counts only when it is whole — a null or
+ * hand-edited `settledAtMs` must never be the thing that suppresses the invite on
+ * that browser forever. Reading and validating the rest of the record belongs to
+ * the runtime chunk, which is the only thing that acts on it. */
+export function communityInviteWasAnswered(): boolean {
   try {
     const raw = getSafeLocalStorage()?.getItem(COMMUNITY_INVITE_KEY);
-    return raw ? parseCommunityInviteRecord(JSON.parse(raw)) : null;
+    if (!raw) {
+      return false;
+    }
+    const record = JSON.parse(raw) as Record<string, unknown>;
+    return (
+      readNonNegativeNumber(record.settledAtMs) !== null &&
+      readCommunityInviteOutcome(record.outcome) !== null
+    );
   } catch {
     // Unreadable state means the nudge simply starts over; it never blocks the app.
-    return null;
+    return false;
   }
-}
-
-export function writeCommunityInviteRecord(record: CommunityInviteRecord): void {
-  try {
-    getSafeLocalStorage()?.setItem(COMMUNITY_INVITE_KEY, JSON.stringify(record));
-  } catch {
-    // Persistence is best effort, matching the update banner's dismissal contract.
-  }
-}
-
-export function isCommunityInviteSettled(record: CommunityInviteRecord | null): boolean {
-  return record?.settledAtMs !== undefined;
 }
 
 /** Installs the invite scheduler and returns its disposer. */
 export function startCommunityInvite(host: CommunityInviteHost): () => void {
-  if (isCommunityInviteSettled(readCommunityInviteRecord())) {
+  if (communityInviteWasAnswered()) {
     return () => undefined;
   }
   let stop: (() => void) | null = null;

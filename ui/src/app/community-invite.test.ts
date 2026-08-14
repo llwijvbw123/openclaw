@@ -1,11 +1,15 @@
 /* @vitest-environment jsdom */
 
 import { afterEach, describe, expect, it } from "vitest";
-import { communityInviteReadiness, recordQualifiedLoad } from "./community-invite.runtime.ts";
 import {
-  COMMUNITY_INVITE_KEY,
+  communityInviteReadiness,
   isCommunityInviteSettled,
   readCommunityInviteRecord,
+  recordQualifiedLoad,
+} from "./community-invite.runtime.ts";
+import {
+  COMMUNITY_INVITE_KEY,
+  communityInviteWasAnswered,
   type CommunityInviteRecord,
 } from "./community-invite.ts";
 
@@ -203,4 +207,52 @@ describe("readCommunityInviteRecord", () => {
     );
     expect(isCommunityInviteSettled(readCommunityInviteRecord())).toBe(false);
   });
+});
+
+describe("communityInviteWasAnswered", () => {
+  afterEach(() => {
+    localStorage.clear();
+  });
+
+  // This probe is the startup-graph gate: answering true means the scheduler chunk
+  // is never fetched again on this browser, so a wrong true is unrecoverable.
+  const cases: ReadonlyArray<{ name: string; raw: string | null; expected: boolean }> = [
+    { name: "no record at all", raw: null, expected: false },
+    {
+      name: "a whole settlement",
+      raw: JSON.stringify({
+        firstQualifiedAtMs: NOW,
+        qualifiedLoads: 2,
+        established: true,
+        settledAtMs: NOW,
+        outcome: "dismissed",
+      }),
+      expected: true,
+    },
+    {
+      name: "a qualified but unanswered record",
+      raw: JSON.stringify({ firstQualifiedAtMs: NOW, qualifiedLoads: 2, established: true }),
+      expected: false,
+    },
+    {
+      name: "a null settlement",
+      raw: JSON.stringify({ settledAtMs: null, outcome: "joined" }),
+      expected: false,
+    },
+    {
+      name: "a settlement with no outcome",
+      raw: JSON.stringify({ settledAtMs: NOW }),
+      expected: false,
+    },
+    { name: "text that is not JSON at all", raw: "{not json", expected: false },
+  ];
+
+  for (const testCase of cases) {
+    it(`${testCase.expected ? "short-circuits on" : "keeps going for"} ${testCase.name}`, () => {
+      if (testCase.raw !== null) {
+        localStorage.setItem(COMMUNITY_INVITE_KEY, testCase.raw);
+      }
+      expect(communityInviteWasAnswered()).toBe(testCase.expected);
+    });
+  }
 });

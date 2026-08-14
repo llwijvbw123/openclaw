@@ -1,16 +1,75 @@
 // Lazy half of the community nudge: the arming rules. Nothing here is reachable
 // from the startup graph, and the card itself is a further dynamic import so only
 // the load that actually presents pays for the dialog and its art.
+import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { CONTROL_UI_BUILD_INFO } from "../build-info.ts";
+import { getSafeLocalStorage } from "../local-storage.ts";
 import {
   COMMUNITY_INVITE_KEY,
-  isCommunityInviteSettled,
-  readCommunityInviteRecord,
-  writeCommunityInviteRecord,
+  readCommunityInviteOutcome,
+  readNonNegativeNumber,
   type CommunityInviteHost,
   type CommunityInviteOutcome,
   type CommunityInviteRecord,
 } from "./community-invite.ts";
+
+/** localStorage is shared, hand-editable and outlives the build that wrote it, so
+ * a stored value is untrusted input rather than a round-trip of our own write.
+ * Trusting it lets `{}` spread into `undefined + 1` qualified loads. Anything that
+ * does not parse is dropped, so the sequence simply starts over. */
+function parseCommunityInviteRecord(value: unknown): CommunityInviteRecord | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const { firstQualifiedAtMs, qualifiedLoads, established, settledAtMs, outcome } = value;
+  const firstSighting = readNonNegativeNumber(firstQualifiedAtMs);
+  const loads = readNonNegativeNumber(qualifiedLoads);
+  if (firstSighting === null || loads === null || !Number.isInteger(loads)) {
+    return null;
+  }
+  if (typeof established !== "boolean") {
+    return null;
+  }
+  const qualified = { firstQualifiedAtMs: firstSighting, qualifiedLoads: loads, established };
+  if (settledAtMs === undefined) {
+    return qualified;
+  }
+  // Settled is terminal, so a half-written settlement must not be what silences
+  // the card: it either reads back whole or the record is dropped entirely.
+  const settled = readNonNegativeNumber(settledAtMs);
+  const answered = readCommunityInviteOutcome(outcome);
+  if (settled === null || answered === null) {
+    return null;
+  }
+  const { settledVersion } = value;
+  return {
+    ...qualified,
+    settledAtMs: settled,
+    outcome: answered,
+    settledVersion: typeof settledVersion === "string" ? settledVersion : null,
+  };
+}
+
+export function readCommunityInviteRecord(): CommunityInviteRecord | null {
+  try {
+    const raw = getSafeLocalStorage()?.getItem(COMMUNITY_INVITE_KEY);
+    return raw ? parseCommunityInviteRecord(JSON.parse(raw)) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeCommunityInviteRecord(record: CommunityInviteRecord): void {
+  try {
+    getSafeLocalStorage()?.setItem(COMMUNITY_INVITE_KEY, JSON.stringify(record));
+  } catch {
+    // Persistence is best effort, matching the update banner's dismissal contract.
+  }
+}
+
+export function isCommunityInviteSettled(record: CommunityInviteRecord | null): boolean {
+  return record?.settledAtMs !== undefined;
+}
 
 /** An upgraded operator never sees the card on the first load of the new build;
  * from the second qualified load the dwell timer decides. */
@@ -96,11 +155,13 @@ function claimPresentation(): Promise<(() => void) | null> {
       .request(PRESENTATION_LOCK, { ifAvailable: true }, (lock) => {
         if (!lock) {
           resolve(null);
-          return;
+          return Promise.resolve();
         }
         // Holding this promise open holds the lock; handing its resolver out makes
         // releasing the lock the scheduler's job once the card goes away.
-        return new Promise<void>((release) => resolve(release));
+        return new Promise<void>((release) => {
+          resolve(() => release());
+        });
       })
       .catch(() => resolve(null));
   });
