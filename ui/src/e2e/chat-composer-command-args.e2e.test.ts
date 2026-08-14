@@ -136,16 +136,15 @@ suite.define(() => {
           path: path.join(ARTIFACT_DIR, `${theme}-4-value-entered.png`),
         });
         await stageInput.press("Enter");
-        const sendRequest = await gateway.waitForRequest("chat.send");
-        const sentText =
-          typeof sendRequest.params === "object" &&
-          sendRequest.params !== null &&
-          "text" in sendRequest.params
-            ? sendRequest.params.text
-            : "";
-        // The regression this PR fixes: the send used to fire with empty text
-        // because the command was routed through the draft and read back.
-        expect(sentText).toBe("/deploy scale 3");
+        await gateway.waitForRequest("chat.send");
+        // Assert the whole dispatch set rather than only the first request: a
+        // staged command must produce exactly one send carrying the assembled
+        // text, so both a lost payload and a stray extra send show up here.
+        expect(await gateway.getRequests("chat.send")).toEqual([
+          expect.objectContaining({
+            params: expect.objectContaining({ text: "/deploy scale 3" }),
+          }),
+        ]);
         await expect.poll(() => page.locator(".slash-arg-stage").count()).toBe(0);
       });
     });
