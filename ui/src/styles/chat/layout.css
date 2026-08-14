@@ -4065,6 +4065,11 @@ button.chat-reply-preview--message:disabled {
   white-space: nowrap;
 }
 
+/* The refused-submit state has to read as a refusal, not as the argument name. */
+.slash-arg-stage__hint--needed {
+  color: var(--danger);
+}
+
 .chat-attachments-preview {
   display: flex;
   gap: 8px;

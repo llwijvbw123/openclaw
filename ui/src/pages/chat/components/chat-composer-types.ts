@@ -179,6 +179,12 @@ export type SlashArgStage = {
   choices: SlashCommandArgChoice[];
   /** Live text in the staged input: a filter for choices, the value otherwise. */
   input: string;
+  /**
+   * Set when a submit was refused because this stage still has no value. Without
+   * it the refusal is silent: the key does nothing and the operator is told
+   * nothing. Cleared as soon as the operator types.
+   */
+  needsValue: boolean;
 };
 
 export type ChatComposerState = {

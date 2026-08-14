@@ -72,6 +72,7 @@ async function openChat(page: Page, theme: Theme, sessionId: string): Promise<Fi
     menu,
     stageInput: page.locator(".slash-arg-stage__input"),
     stagePrefix: page.locator(".slash-arg-stage__prefix"),
+    stageHint: page.locator(".slash-arg-stage__hint"),
     // The slash menu is `position: absolute; bottom: 100%`, so it lives entirely
     // outside the composer shell's box. Clipping to the shell alone silently drops
     // the option list -- the exact thing these captures exist to show -- so union
@@ -264,10 +265,20 @@ suite.define(() => {
         await expect.poll(() => f.stageInput.getAttribute("aria-required")).toBe("true");
         await f.shot("creq1-required-empty");
 
+        // The refusal has to be visible: an Enter that silently does nothing is
+        // the worst outcome here, so the hint takes over and says why.
         await f.stageInput.press("Enter");
         expect(await f.sentMessages()).toEqual([]);
         await expect.poll(() => f.stageInput.count()).toBe(1);
+        await expect.poll(() => f.stageHint.textContent()).toBe("Enter a value to continue");
+        await expect.poll(() => f.stageInput.getAttribute("aria-invalid")).toBe("true");
         await f.shot("creq2-refused");
+
+        // Typing clears the refusal instead of leaving a stale warning behind.
+        await f.stageInput.fill("wrap it up");
+        await expect.poll(() => f.stageHint.textContent()).toBe("message");
+        await expect.poll(() => f.stageInput.getAttribute("aria-invalid")).toBe(null);
+        await f.shot("creq3-recovered");
       });
     });
 

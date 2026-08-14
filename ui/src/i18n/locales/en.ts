@@ -4926,6 +4926,7 @@ export const en: TranslationMap = {
       argValuePlaceholder: "Enter {arg}",
       argFilterPlaceholder: "Filter {arg}",
       argDynamicUnavailable: "Options depend on the active model — type a value",
+      argNeedsValue: "Enter a value to continue",
       clearDescription: "Clear chat history",
       redirectDescription: "Abort and restart with a new message",
       steerDescription: "Inject a message into the active run",

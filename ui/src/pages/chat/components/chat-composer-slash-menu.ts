@@ -109,7 +109,7 @@ function buildSlashArgStage(
   if (!spec) {
     return null;
   }
-  return { command, values, index, choices: spec.choices ?? [], input: "" };
+  return { command, values, index, choices: spec.choices ?? [], input: "", needsValue: false };
 }
 
 function openSlashArgStage(
@@ -400,7 +400,10 @@ export function handleSlashArgInputKeyDown(
   const value = stage.input.trim();
   // Tab only advances a stage that already has a value; an empty required stage
   // must not run a command that the operator has not finished describing.
+  // Record the refusal so the stage can say why instead of swallowing the key.
   if (!value && (event.key === "Tab" || getSlashStageArgSpec(stage)?.required === true)) {
+    stage.needsValue = true;
+    requestUpdate();
     return;
   }
   commitSlashArgValue(value, props, requestUpdate);
@@ -457,15 +460,19 @@ export function renderSlashArgStage(
         aria-expanded=${hasChoices ? "true" : nothing}
         aria-activedescendant=${getActiveSlashMenuOptionId(state, props.paneId) ?? nothing}
         aria-required=${spec.required ? "true" : nothing}
+        aria-invalid=${stage.needsValue ? "true" : nothing}
         @input=${(event: InputEvent) => {
           stage.input = (event.target as HTMLInputElement).value;
+          stage.needsValue = false;
           state.slashMenuIndex = 0;
           requestUpdate();
         }}
         @keydown=${(event: KeyboardEvent) =>
           handleSlashArgInputKeyDown(event, props, requestUpdate)}
       />
-      <span class="slash-arg-stage__hint">${spec.name}</span>
+      <span class="slash-arg-stage__hint ${stage.needsValue ? "slash-arg-stage__hint--needed" : ""}"
+        >${stage.needsValue ? t("chat.commands.argNeedsValue") : spec.name}</span
+      >
     </div>
   `;
 }
