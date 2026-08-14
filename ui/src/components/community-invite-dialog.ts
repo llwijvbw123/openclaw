@@ -6,8 +6,8 @@ import { inferControlUiPublicAssetPath } from "../app/public-assets.ts";
 import { t } from "../i18n/index.ts";
 import { EXTERNAL_LINK_TARGET, buildExternalLinkRel } from "../lib/external-link.ts";
 import { OpenClawLitElement } from "../lit/openclaw-element.ts";
-import { icons } from "./icons.ts";
 import { strokeIcon } from "./icons-tools.ts";
+import { icons } from "./icons.ts";
 import "./modal-dialog.ts";
 
 export const COMMUNITY_INVITE_URL = "https://discord.gg/clawd";
@@ -58,10 +58,11 @@ export class OpenClawCommunityInviteDialog extends OpenClawLitElement {
       display: block;
       width: 100%;
       height: 100%;
-      /* Calibrated to keep the lobster and the Discord pedestal centred in the
-         short header crop; changing the height means re-checking this. */
+      /* Calibrated against the 148px header: air above the antennae, the pedestal
+         base grounded in the fade, both subjects centred. Changing the header
+         height means re-checking this crop. */
       object-fit: cover;
-      object-position: center 58%;
+      object-position: center 70%;
     }
 
     .invite__fade {

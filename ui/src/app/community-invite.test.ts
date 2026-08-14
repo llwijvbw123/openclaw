@@ -1,0 +1,126 @@
+/* @vitest-environment jsdom */
+
+import { describe, expect, it } from "vitest";
+import { communityInviteReadiness, recordQualifiedLoad } from "./community-invite.runtime.ts";
+import type { CommunityInviteRecord } from "./community-invite.ts";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const NOW = 1_760_000_000_000;
+
+function record(overrides: Partial<CommunityInviteRecord> = {}): CommunityInviteRecord {
+  return {
+    firstQualifiedAtMs: NOW - 30 * DAY_MS,
+    qualifiedLoads: 1,
+    established: true,
+    ...overrides,
+  };
+}
+
+describe("recordQualifiedLoad", () => {
+  it("classifies a browser that already sees sessions as an upgraded operator", () => {
+    expect(recordQualifiedLoad(null, true, NOW)).toEqual({
+      firstQualifiedAtMs: NOW,
+      qualifiedLoads: 1,
+      established: true,
+    });
+  });
+
+  it("classifies a browser with no sessions as a fresh install", () => {
+    expect(recordQualifiedLoad(null, false, NOW)).toEqual({
+      firstQualifiedAtMs: NOW,
+      qualifiedLoads: 1,
+      established: false,
+    });
+  });
+
+  it("keeps the original cohort and first sighting once classified", () => {
+    const previous = record({ established: false, qualifiedLoads: 2 });
+    // A fresh install that later grows sessions must not be promoted to the
+    // upgrade cohort, or its evaluation window would be cut short.
+    expect(recordQualifiedLoad(previous, true, NOW + DAY_MS)).toEqual({
+      firstQualifiedAtMs: previous.firstQualifiedAtMs,
+      qualifiedLoads: 3,
+      established: false,
+    });
+  });
+
+  it("preserves a settled outcome so a stray load cannot revive the card", () => {
+    const settled = record({ settledAtMs: NOW - DAY_MS, outcome: "dismissed" });
+    expect(recordQualifiedLoad(settled, true, NOW)).toMatchObject({
+      settledAtMs: settled.settledAtMs,
+      outcome: "dismissed",
+    });
+  });
+});
+
+describe("communityInviteReadiness", () => {
+  const cases: ReadonlyArray<{
+    name: string;
+    record: CommunityInviteRecord;
+    expected: "ready" | "waiting";
+  }> = [
+    {
+      name: "upgraded operator waits out the first load of the new build",
+      record: record({ established: true, qualifiedLoads: 1 }),
+      expected: "waiting",
+    },
+    {
+      name: "upgraded operator arms on the second qualified load",
+      record: record({ established: true, qualifiedLoads: 2 }),
+      expected: "ready",
+    },
+    {
+      name: "fresh install waits while it is still young, even after many loads",
+      record: record({
+        established: false,
+        qualifiedLoads: 9,
+        firstQualifiedAtMs: NOW - DAY_MS,
+      }),
+      expected: "waiting",
+    },
+    {
+      name: "fresh install waits while load count is short, even when old enough",
+      record: record({
+        established: false,
+        qualifiedLoads: 2,
+        firstQualifiedAtMs: NOW - 30 * DAY_MS,
+      }),
+      expected: "waiting",
+    },
+    {
+      name: "fresh install arms once it is both old enough and used enough",
+      record: record({
+        established: false,
+        qualifiedLoads: 3,
+        firstQualifiedAtMs: NOW - 2 * DAY_MS,
+      }),
+      expected: "ready",
+    },
+    {
+      name: "a settled record never arms again",
+      record: record({ qualifiedLoads: 9, settledAtMs: NOW - DAY_MS, outcome: "joined" }),
+      expected: "waiting",
+    },
+    {
+      name: "a dismissed record never arms again",
+      record: record({ qualifiedLoads: 9, settledAtMs: NOW - DAY_MS, outcome: "dismissed" }),
+      expected: "waiting",
+    },
+  ];
+
+  for (const testCase of cases) {
+    it(testCase.name, () => {
+      expect(communityInviteReadiness(testCase.record, NOW)).toBe(testCase.expected);
+    });
+  }
+
+  it("treats the two-day boundary as reached, not passed", () => {
+    const boundary = record({
+      established: false,
+      qualifiedLoads: 3,
+      firstQualifiedAtMs: NOW - 2 * DAY_MS,
+    });
+    expect(communityInviteReadiness(boundary, NOW)).toBe("ready");
+    expect(communityInviteReadiness(boundary, NOW - 1)).toBe("waiting");
+  });
+});

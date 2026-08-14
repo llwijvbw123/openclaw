@@ -1,8 +1,7 @@
-// Lazy half of the community nudge: arming rules plus the card. Nothing here is
-// reachable from the startup graph, so the Control UI pays for it only on the load
-// that actually arms the invite.
+// Lazy half of the community nudge: the arming rules. Nothing here is reachable
+// from the startup graph, and the card itself is a further dynamic import so only
+// the load that actually presents pays for the dialog and its art.
 import { CONTROL_UI_BUILD_INFO } from "../build-info.ts";
-import { COMMUNITY_INVITE_SETTLED_EVENT } from "../components/community-invite-dialog.ts";
 import {
   isCommunityInviteSettled,
   readCommunityInviteRecord,
@@ -19,12 +18,15 @@ const ESTABLISHED_MIN_LOADS = 2;
  * first days of evaluation stay free of community chrome. */
 const NEW_INSTALL_MIN_LOADS = 3;
 const NEW_INSTALL_MIN_AGE_MS = 2 * 24 * 60 * 60 * 1000;
-/** Dwell inside one connected load, so the card lands in a working session
- * instead of on a cold page open. */
+/** Dwell is *accumulated* foreground time inside one load, not continuous
+ * presence. Operators tab away constantly while a run streams, so a continuous
+ * rule would hide the card from exactly the people using OpenClaw most; the
+ * accumulator still proves five real minutes in the app before anything appears. */
 const DWELL_MS = 5 * 60 * 1000;
-/** Re-check cadence while the moment is unsuitable (tab hidden, operator typing). */
-const RETRY_MS = 30 * 1000;
+/** Context lands with the first shell render. Bounded so a shell that never
+ * publishes one cannot leave a timer chain alive. */
 const CONTEXT_POLL_MS = 1000;
+const CONTEXT_POLL_ATTEMPTS = 30;
 
 export function communityInviteReadiness(
   record: CommunityInviteRecord,
@@ -54,13 +56,15 @@ export function recordQualifiedLoad(
   return { ...previous, qualifiedLoads: previous.qualifiedLoads + 1 };
 }
 
-/** A modal must never take focus away from something the operator is using. */
-function momentIsSuitable(): boolean {
-  if (document.visibilityState !== "visible" || !document.hasFocus()) {
-    return false;
-  }
+/** Foreground presence: the only state in which dwell time accrues. */
+export function operatorIsPresent(): boolean {
+  return document.visibilityState === "visible" && document.hasFocus();
+}
+
+/** A modal must never take focus away from something the operator is typing into. */
+export function editableElementFocused(): boolean {
   const active = document.activeElement;
-  return !(
+  return (
     active instanceof HTMLElement &&
     (active.isContentEditable ||
       active instanceof HTMLInputElement ||
@@ -71,8 +75,14 @@ function momentIsSuitable(): boolean {
 export function runCommunityInvite(host: CommunityInviteHost): () => void {
   let disposed = false;
   let qualified = false;
-  let presentTimer: ReturnType<typeof setTimeout> | null = null;
-  let attachTimer: ReturnType<typeof setTimeout> | null = null;
+  let presented = false;
+  let dwellAccumulatedMs = 0;
+  let dwellStartedAtMs: number | null = null;
+  let dwellSatisfied = false;
+  let dwellTimer: ReturnType<typeof setTimeout> | null = null;
+  let contextTimer: ReturnType<typeof setTimeout> | null = null;
+  let contextAttempts = 0;
+  let listening = false;
   let unsubscribeGateway: (() => void) | null = null;
   let unsubscribeSessions: (() => void) | null = null;
 
@@ -89,22 +99,103 @@ export function runCommunityInvite(host: CommunityInviteHost): () => void {
     });
   };
 
-  const present = () => {
-    if (disposed || isCommunityInviteSettled(readCommunityInviteRecord())) {
+  const clearDwellTimer = () => {
+    if (dwellTimer !== null) {
+      clearTimeout(dwellTimer);
+      dwellTimer = null;
+    }
+  };
+
+  /** Folds the open presence span into the accumulator. */
+  const bankDwell = () => {
+    if (dwellStartedAtMs !== null) {
+      dwellAccumulatedMs += Date.now() - dwellStartedAtMs;
+      dwellStartedAtMs = null;
+    }
+  };
+
+  const tryPresent = () => {
+    if (disposed || presented || !dwellSatisfied) {
       return;
     }
-    if (!momentIsSuitable()) {
-      presentTimer = setTimeout(present, RETRY_MS);
+    if (!operatorIsPresent() || editableElementFocused()) {
+      // No retry timer: the next visibility/focus event brings us back here.
       return;
     }
-    const card = document.createElement("openclaw-community-invite-dialog");
-    card.addEventListener(COMMUNITY_INVITE_SETTLED_EVENT, (event) => {
-      settle((event as CustomEvent<{ outcome: CommunityInviteOutcome }>).detail.outcome);
-      card.remove();
-    });
-    document.body.append(card);
-    // The card is terminal for this scheduler; nothing re-arms it.
-    dispose();
+    // The card is terminal for this scheduler; stop watching before the chunk
+    // lands so a late gateway event cannot arm a second one.
+    presented = true;
+    stopWatching();
+    void import("../components/community-invite-dialog.ts")
+      .then(({ COMMUNITY_INVITE_SETTLED_EVENT }) => {
+        if (disposed) {
+          return;
+        }
+        const card = document.createElement("openclaw-community-invite-dialog");
+        card.addEventListener(COMMUNITY_INVITE_SETTLED_EVENT, (event) => {
+          settle((event as CustomEvent<{ outcome: CommunityInviteOutcome }>).detail.outcome);
+          card.remove();
+        });
+        document.body.append(card);
+      })
+      .catch(() => {
+        // A failed chunk fetch leaves the record unsettled, so a later load retries.
+        presented = false;
+      });
+  };
+
+  /** One-shot timer for the dwell remainder, alive only while the operator is here. */
+  const armDwell = () => {
+    if (dwellSatisfied || dwellStartedAtMs !== null || !operatorIsPresent()) {
+      return;
+    }
+    dwellStartedAtMs = Date.now();
+    dwellTimer = setTimeout(() => {
+      dwellTimer = null;
+      bankDwell();
+      dwellSatisfied = true;
+      tryPresent();
+    }, DWELL_MS - dwellAccumulatedMs);
+  };
+
+  /** Single handler for visibilitychange, window focus/blur and focusin/focusout:
+   * presence drives the dwell accumulator, and every event is a chance to present
+   * once dwell is satisfied. Nothing polls. */
+  const onEnvironmentChange = () => {
+    if (disposed || presented) {
+      return;
+    }
+    if (operatorIsPresent()) {
+      armDwell();
+    } else if (dwellStartedAtMs !== null) {
+      clearDwellTimer();
+      bankDwell();
+    }
+    tryPresent();
+  };
+
+  const startListening = () => {
+    if (listening) {
+      return;
+    }
+    listening = true;
+    document.addEventListener("visibilitychange", onEnvironmentChange);
+    document.addEventListener("focusin", onEnvironmentChange);
+    document.addEventListener("focusout", onEnvironmentChange);
+    window.addEventListener("focus", onEnvironmentChange);
+    window.addEventListener("blur", onEnvironmentChange);
+  };
+
+  const stopListening = () => {
+    if (!listening) {
+      return;
+    }
+    listening = false;
+    document.removeEventListener("visibilitychange", onEnvironmentChange);
+    document.removeEventListener("focusin", onEnvironmentChange);
+    document.removeEventListener("focusout", onEnvironmentChange);
+    window.removeEventListener("focus", onEnvironmentChange);
+    window.removeEventListener("blur", onEnvironmentChange);
   };
 
   const evaluate = () => {
@@ -124,23 +215,26 @@ export function runCommunityInvite(host: CommunityInviteHost): () => void {
     );
     writeCommunityInviteRecord(record);
     if (communityInviteReadiness(record, now) === "ready") {
-      presentTimer = setTimeout(present, DWELL_MS);
+      startListening();
+      armDwell();
     }
   };
 
-  function dispose() {
-    disposed = true;
-    if (presentTimer !== null) {
-      clearTimeout(presentTimer);
-      presentTimer = null;
+  function stopWatching() {
+    clearDwellTimer();
+    if (contextTimer !== null) {
+      clearTimeout(contextTimer);
+      contextTimer = null;
     }
-    if (attachTimer !== null) {
-      clearTimeout(attachTimer);
-      attachTimer = null;
-    }
+    stopListening();
     unsubscribeGateway?.();
     unsubscribeSessions?.();
     unsubscribeGateway = unsubscribeSessions = null;
+  }
+
+  function dispose() {
+    disposed = true;
+    stopWatching();
   }
 
   // The shell can hand over a context before or after the gateway connects, so the
@@ -154,13 +248,11 @@ export function runCommunityInvite(host: CommunityInviteHost): () => void {
     unsubscribeSessions = context.sessions.subscribe(evaluate);
   };
   const attachOrRetry = () => {
-    attachTimer = null;
+    contextTimer = null;
     attach();
     evaluate();
-    if (!disposed && !unsubscribeGateway) {
-      // Context lands with the first shell render; poll rather than reach into the
-      // host's update lifecycle from a lazily loaded module.
-      attachTimer = setTimeout(attachOrRetry, CONTEXT_POLL_MS);
+    if (!disposed && !unsubscribeGateway && (contextAttempts += 1) < CONTEXT_POLL_ATTEMPTS) {
+      contextTimer = setTimeout(attachOrRetry, CONTEXT_POLL_MS);
     }
   };
   attachOrRetry();
