@@ -541,6 +541,7 @@ export function createHookRunner(
    * Run a hook that doesn't return a value (fire-and-forget style).
    * All handlers are executed in parallel for performance.
    */
+  //todo: 这里应该是所有hook的执行的地方,如果需要增加hook执行的监控或者埋点, 可以在这里统一处理
   async function runVoidHook<K extends PluginHookName>(
     hookName: K,
     event: Parameters<NonNullable<PluginHookRegistration<K>["handler"]>>[0],

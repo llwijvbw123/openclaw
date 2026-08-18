@@ -871,9 +871,15 @@ export function wrapStreamFnWithDiagnosticModelCallEvents(
       modelContent,
       contentCapture: ctx.contentCapture,
     };
-    // Provider wrappers consume this same call id for transport correlation,
-    // keeping external request evidence joined to the emitted diagnostics.
-    const propagatedOptions = withDiagnosticRequestContext(options, trace, state, callId);
+    //todo: 在这补充发出会话的sessionId，方便zerotoken 更新会话
+    options = {
+      ...options,
+      headers: {
+        ...(options?.headers || {}),
+        "x-session-id": ctx.sessionId ?? "", // 或者使用 String(ctx.sessionId)
+      },
+    };
+    const propagatedOptions = withDiagnosticTraceparentHeader(options, trace, state, callId);
 
     try {
       const result = streamFn(model, streamContext, propagatedOptions);

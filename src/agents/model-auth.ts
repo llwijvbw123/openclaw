@@ -2062,6 +2062,7 @@ export function applySecretRefHeaderSentinels<T extends Model>(
  * available, or when the API key is a synthetic marker (e.g. local-server
  * placeholders) rather than a real credential.
  */
+//todo: 应用模型提供的authHeader
 export function applyAuthHeaderOverride<T extends Model>(
   model: T,
   auth: ResolvedProviderAuth | null | undefined,

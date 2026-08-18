@@ -161,7 +161,7 @@ function collectBalancedJsonCandidates(text: string): string[] {
   }
   return candidates;
 }
-
+//todo: 可能是工具调用的开头
 function detectJsonToolCall(text: string): ToolCallShapedTextDetection | null {
   const candidates = [...collectFencedJsonCandidates(text), ...collectBalancedJsonCandidates(text)];
   for (const candidate of candidates) {
