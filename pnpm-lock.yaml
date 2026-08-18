@@ -1048,6 +1048,8 @@ importers:
         specifier: 3.19.0
         version: 3.19.0(typescript@6.0.3)
 
+  extensions/llm-header-session: {}
+
   extensions/llm-task:
     dependencies:
       typebox:
