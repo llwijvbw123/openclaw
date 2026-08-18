@@ -1,0 +1,11 @@
+{
+  "name": "llm-header-session",
+  "version": "1.0.0",
+  "type": "module",
+  "openclaw": {
+    "extensions": ["./index.ts"],
+    "compat": {
+      "pluginApi": ">=2025.12.0"
+    }
+  }
+}

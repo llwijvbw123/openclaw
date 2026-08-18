@@ -1,0 +1,20 @@
+{
+  "id": "llm-header-session",
+  "name": "LLM请求携带SessionId Header",
+  "description": "全局注入X-Session-ID、X-Custom-Flag请求Header",
+  "version": "1.0.0",
+  "kind": "gateway",
+  "compat": {
+    "minGatewayVersion": "2025.12.0"
+  },
+  "activation": {
+    "onStartup": true
+  },
+  "contracts": {
+    "hooks": ["provider:beforeFetch"]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false
+  }
+}
