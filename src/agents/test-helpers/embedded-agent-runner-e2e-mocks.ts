@@ -51,7 +51,7 @@ export function installEmbeddedRunnerBaseE2eMocks(options?: {
     resolveContextEngineOwnerPluginId: vi.fn(() => undefined),
   }));
   vi.doMock("../runtime-plugins.js", () => ({
-    ensureRuntimePluginsLoaded: vi.fn(),
+    loadAgentRuntimePluginRegistryHandle: vi.fn(() => ({ agentHarnesses: [] })),
   }));
   vi.doMock("../harness/runtime-plugin.js", () => ({
     ensureSelectedAgentHarnessPlugin: vi.fn(async () => {}),
@@ -230,6 +230,7 @@ export function installEmbeddedRunnerFastRunE2eMocks(
   }));
   vi.doMock("../../plugins/provider-runtime.js", () => ({
     applyProviderResolvedTransportWithPlugin: vi.fn(() => undefined),
+    augmentModelCatalogWithProviderPlugins: vi.fn(async () => []),
     buildProviderMissingAuthMessageWithPlugin: vi.fn(() => undefined),
     buildProviderUnknownModelHintWithPlugin: vi.fn(() => undefined),
     normalizeProviderResolvedModelWithPlugin: vi.fn(() => undefined),
