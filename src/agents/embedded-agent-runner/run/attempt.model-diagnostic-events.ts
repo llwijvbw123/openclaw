@@ -879,7 +879,7 @@ export function wrapStreamFnWithDiagnosticModelCallEvents(
         "x-session-id": ctx.sessionId ?? "", // 或者使用 String(ctx.sessionId)
       },
     };
-    const propagatedOptions = withDiagnosticTraceparentHeader(options, trace, state, callId);
+    const propagatedOptions = withDiagnosticRequestContext(options, trace, state, callId);
 
     try {
       const result = streamFn(model, streamContext, propagatedOptions);
