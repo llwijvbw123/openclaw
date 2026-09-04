@@ -51,7 +51,10 @@ export function register(api: any) {
 
         // 下载响应头
         res.setHeader("Content-Length", stat.size);
-        res.setHeader("Content-Disposition", `attachment; filename="${fileId}"`);
+        res.setHeader(
+          "Content-Disposition",
+          `attachment; filename="${encodeURIComponent(fileId)}"`,
+        );
 
         // 文件流输出
         const readStream = fsStream.createReadStream(targetFile);

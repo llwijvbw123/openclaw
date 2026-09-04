@@ -156,3 +156,7 @@ packageExtensions:
 
 patchedDependencies:
   "@openclaw/fs-safe@0.4.1": patches/@openclaw__fs-safe@0.4.1.patch
+supportedArchitectures:
+  os: [darwin]
+  cpu: [arm64]
+  libc: [current]
