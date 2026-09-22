@@ -470,7 +470,7 @@ async function streamAssistantResponse(
   // Resolve API key (important for expiring tokens)
   const resolvedApiKey =
     (config.getApiKey ? await config.getApiKey(config.model.provider) : undefined) || config.apiKey;
-
+  //todo 在此向llm发起请求
   const response = await streamFunction(config.model, llmContext, {
     ...config,
     apiKey: resolvedApiKey,

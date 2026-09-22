@@ -5,7 +5,7 @@
       "name": "Rebuild and Debug Gateway",
       "type": "node",
       "request": "launch",
-      "preLaunchTask": "debug:rebuild",
+      // "preLaunchTask": "debug:rebuild",
       "program": "${workspaceFolder}/openclaw.mjs",
       "args": ["gateway", "run"],
       "console": "integratedTerminal",
